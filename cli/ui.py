@@ -122,7 +122,7 @@ class UI:
         if degraded:
             self.warn("Memória vetorial indisponível — resultados por palavra-chave (FTS5).")
         if not hits:
-            self.info("Nenhum resultado. O projeto já foi indexado? (`aider index .`)")
+            self.info("Nenhum resultado. O projeto já foi indexado? (`coder-dev index .`)")
             return
         for i, hit in enumerate(hits, 1):
             score = f"{hit.score:.2f}" if hit.score else "fts"

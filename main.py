@@ -1,7 +1,7 @@
 """Ponto de entrada do Aider Pessoal.
 
-`[project.scripts] aider = "main:app"` registra o comando `aider` apontando
-para o objeto Typer abaixo.
+`[project.scripts] coder-dev = "main:app"` registra o comando `coder-dev`
+apontando para o objeto Typer abaixo.
 """
 
 from cli.commands import app

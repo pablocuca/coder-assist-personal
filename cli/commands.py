@@ -142,7 +142,7 @@ def undo(
 
 @app.command()
 def tag(
-    interaction_id: int = typer.Argument(..., help="ID da interação (ver `aider history`)"),
+    interaction_id: int = typer.Argument(..., help="ID da interação (ver `coder-dev history`)"),
     nome: str = typer.Argument(..., help="Nome da tag (livre, criada sob demanda)"),
 ):
     """Aplica uma tag a uma interação, para filtrar em history/recall."""

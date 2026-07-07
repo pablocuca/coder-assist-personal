@@ -27,28 +27,28 @@ pipx install -e .              # recomendado (isola dependências)
 
 O estado em runtime (banco, backups, logs) fica em `~/.personal-aider/`,
 separado do código-fonte. Overrides locais de configuração:
-`~/.personal-aider/config/settings.yaml` (ou `aider config --set chave=valor`).
+`~/.personal-aider/config/settings.yaml` (ou `coder-dev config --set chave=valor`).
 
 ## Uso
 
 ```bash
 cd ~/dev/meu-projeto
-aider index .         # indexa o projeto no banco vetorial (incremental; --full re-indexa)
-aider edit lib/home_page.dart -m "converte para ConsumerWidget"
-aider edit lib/service.dart -m "refatora" --plan          # plano em passos antes de editar
-aider edit lib/complexo.dart -m "..." --provider claude   # escala direto (confirma custo)
-aider ask "por que essa tela usa Provider?"
-aider recall "bug de login google" -k 5      # busca híbrida (vetorial+FTS5) com fontes
-aider recall "por que migramos?" --synthesize
-aider recall --tag auth
-aider decision "Adotamos Riverpod em vez de Provider" --tag architecture
-aider stats --since 30d
-aider commit          # mensagem sugerida pela IA, editável — nunca automática
-aider history -n 20
-aider undo            # restaura o backup da última edição (com diff + confirmação)
-aider undo --list
-aider tag 42 auth
-aider config --show
+coder-dev index .         # indexa o projeto no banco vetorial (incremental; --full re-indexa)
+coder-dev edit lib/home_page.dart -m "converte para ConsumerWidget"
+coder-dev edit lib/service.dart -m "refatora" --plan          # plano em passos antes de editar
+coder-dev edit lib/complexo.dart -m "..." --provider claude   # escala direto (confirma custo)
+coder-dev ask "por que essa tela usa Provider?"
+coder-dev recall "bug de login google" -k 5      # busca híbrida (vetorial+FTS5) com fontes
+coder-dev recall "por que migramos?" --synthesize
+coder-dev recall --tag auth
+coder-dev decision "Adotamos Riverpod em vez de Provider" --tag architecture
+coder-dev stats --since 30d
+coder-dev commit          # mensagem sugerida pela IA, editável — nunca automática
+coder-dev history -n 20
+coder-dev undo            # restaura o backup da última edição (com diff + confirmação)
+coder-dev undo --list
+coder-dev tag 42 auth
+coder-dev config --show
 ```
 
 Escalada para Claude: o Router recomenda quando a confiança fica abaixo do
@@ -71,9 +71,9 @@ pytest
   path guard, redactor, testes.
 - **V1 (feito)**: ChromaDB + embeddings (`nomic-embed-text`, fallback opcional
   sentence-transformers), chunking com fronteiras de função e invalidação por
-  hash, `aider index .` incremental respeitando `.gitignore` real (pathspec),
+  hash, `coder-dev index .` incremental respeitando `.gitignore` real (pathspec),
   FTS5 sincronizado por triggers (degradação do recall), `recall` vetorial com
-  proveniência obrigatória, `recall --tag`, `stats`, `aider commit` assistido
+  proveniência obrigatória, `recall --tag`, `stats`, `coder-dev commit` assistido
   com registro na tabela `commits`, interações indexadas em best-effort.
 - **V2 (feito)**: provider Claude via Claude Code CLI (`claude -p` headless,
   prompt via stdin, cwd neutro, sem ferramentas, `--max-turns 1`,
@@ -82,7 +82,7 @@ pytest
   falhas de parse, task complexo) com estimativa e confirmação de custo,
   busca híbrida RRF + `recall --synthesize` com fontes citadas, edição
   multi-arquivo com aprovação individual ou em lote, documentos de decisão
-  (`aider decision`), planejamento (`aider edit --plan`), provider Claude
+  (`coder-dev decision`), planejamento (`coder-dev edit --plan`), provider Claude
   testado com binário mockado.
 
 Melhorias opcionais não implementadas (listadas como tal na spec):
