@@ -97,11 +97,12 @@ def edit(
     arquivo: str = typer.Argument(..., help="Arquivo a editar (relativo à raiz do projeto)"),
     provider: Optional[str] = typer.Option(None, "--provider", help="ollama | claude"),
     message: Optional[str] = typer.Option(None, "--message", "-m", help="Instrução de edição"),
+    plan: bool = typer.Option(False, "--plan", help="Exibir plano em passos antes de editar"),
 ):
-    """Edita um arquivo: proposta da IA → diff → aprovação → backup → gravação."""
+    """Edita arquivos: proposta da IA → diff por arquivo → aprovação → backup → gravação."""
     ctx = _ctx()
     instruction = message or typer.prompt("Instrução")
-    _guarded(lambda: ctx.agent.edit(arquivo, instruction, provider=provider))
+    _guarded(lambda: ctx.agent.edit(arquivo, instruction, provider=provider, plan=plan))
 
 
 @app.command()
@@ -178,8 +179,11 @@ def recall(
     query: Optional[str] = typer.Argument(None, help="Busca semântica no conhecimento acumulado"),
     tag: Optional[str] = typer.Option(None, "--tag", help="Listar interações com esta tag"),
     k: int = typer.Option(5, "-k", help="Quantidade de resultados"),
+    synthesize: bool = typer.Option(
+        False, "--synthesize", help="Resposta consolidada via IA, citando as fontes"
+    ),
 ):
-    """Recupera conhecimento acumulado (busca vetorial com fontes; FTS5 como degradação)."""
+    """Busca híbrida (vetorial + FTS5, fusão RRF) com fontes; FTS5 puro como degradação."""
     ctx = _ctx()
     if tag:
         rows = ctx.store.history(tag=tag, limit=k)
@@ -194,14 +198,36 @@ def recall(
 
     try:
         retriever = Retriever(ctx.memory.vectors, ctx.memory.embedder, ctx.store)
-        hits = retriever.recall(query, k=k)
-        ui.show_recall(hits)
+        hits = retriever.recall_hybrid(query, k=k)
+        degraded = False
     except (VectorStoreError, ProviderError) as e:
         # Degradação (seção 19): vetorial indisponível → busca por palavra-chave
         ui.warn(str(e))
-        fallback = Retriever(None, ctx.memory.embedder, ctx.store)
-        hits = fallback.recall_keyword(query, k=k)
-        ui.show_recall(hits, degraded=True)
+        retriever = Retriever(None, ctx.memory.embedder, ctx.store)
+        hits = retriever.recall_keyword(query, k=k)
+        degraded = True
+
+    ui.show_recall(hits, degraded=degraded)
+    if synthesize and hits:
+        def run() -> None:
+            prompt = retriever.build_synthesis_prompt(query, hits)
+            _, response = ctx.router.ask(
+                "recall_synthesis", prompt, system=load_prompt("recall.md")
+            )
+            ui.print_markdown(response.text)
+            ui.info("Fontes listadas acima — síntese sempre com proveniência.")
+
+        _guarded(run)
+
+
+@app.command()
+def decision(
+    texto: str = typer.Argument(..., help="Texto da decisão (uma decisão por documento)"),
+    tag: list[str] = typer.Option([], "--tag", help="Tags da decisão (repetível)"),
+):
+    """Registra uma decisão de arquitetura na memória (recuperável via recall)."""
+    ctx = _ctx()
+    _guarded(lambda: ctx.agent.decision(texto, tags=list(tag)))
 
 
 @app.command()

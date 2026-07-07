@@ -37,7 +37,7 @@ class UI:
 
     # --- diff e proposta ---------------------------------------------------------
 
-    def show_diff(self, diff: str) -> None:
+    def show_diff(self, diff: str, title: str = "diff proposto") -> None:
         rendered = Text()
         for line in diff.splitlines():
             if line.startswith("+++") or line.startswith("---"):
@@ -50,25 +50,45 @@ class UI:
                 rendered.append(line + "\n", style="red")
             else:
                 rendered.append(line + "\n", style="dim")
-        self.console.print(Panel(rendered, title="diff proposto", border_style="blue"))
+        self.console.print(Panel(rendered, title=escape(title), border_style="blue"))
 
-    def show_proposal(self, diff: str, explanation: str, confidence: float) -> None:
+    def show_explanation(
+        self, explanation: str, confidence: float, files: list[str] | None = None
+    ) -> None:
         color = "green" if confidence >= 0.8 else "yellow" if confidence >= 0.6 else "red"
+        files_line = (
+            f"\n[bold]arquivos:[/bold] {escape(', '.join(files))}" if files else ""
+        )
         self.console.print(
             Panel(
-                f"{explanation}\n\n[bold]confidence:[/bold] [{color}]{confidence:.2f}[/{color}]",
+                f"{escape(explanation)}\n\n[bold]confidence:[/bold] "
+                f"[{color}]{confidence:.2f}[/{color}]{files_line}",
                 title="proposta do modelo",
                 border_style="magenta",
             )
         )
-        self.show_diff(diff)
 
-    def ask_approval(self) -> str:
+    def ask_approval(self, allow_escalate: bool = True) -> str:
+        if allow_escalate:
+            return Prompt.ask(
+                "[bold][a][/bold]provar / [bold][r][/bold]ejeitar / [bold][e][/bold]scalar para Claude",
+                choices=["a", "r", "e"],
+                default="r",
+            )
         return Prompt.ask(
-            "[bold][a][/bold]provar / [bold][r][/bold]ejeitar / [bold][e][/bold]scalar para Claude",
-            choices=["a", "r", "e"],
+            "[bold][a][/bold]provar / [bold][r][/bold]ejeitar",
+            choices=["a", "r"],
             default="r",
         )
+
+    def ask_batch_approval(self, allow_escalate: bool = True) -> str:
+        """Aprovação multi-arquivo: tudo, individual, rejeitar, escalar."""
+        choices = ["a", "i", "r"] + (["e"] if allow_escalate else [])
+        label = (
+            "[bold][a][/bold]provar tudo / [bold][i][/bold]ndividual / [bold][r][/bold]ejeitar"
+            + (" / [bold][e][/bold]scalar" if allow_escalate else "")
+        )
+        return Prompt.ask(label, choices=choices, default="r")
 
     def confirm(self, message: str) -> bool:
         return Confirm.ask(message, default=False)

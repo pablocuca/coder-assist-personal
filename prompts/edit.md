@@ -19,6 +19,7 @@ Regras invioláveis:
 2. Para criar um arquivo novo, ou reescrever por completo um arquivo com menos de 100 linhas, use a forma alternativa: {"file": "...", "replace_file": "<conteúdo completo do arquivo>"} — sem "search" nem "replace".
 3. Faça o mínimo de edits necessário. Prefira vários edits pequenos e precisos a um edit gigante.
 4. Se a instrução for ambígua ou você não tiver certeza, reduza o "confidence" e explique a dúvida no "explanation".
+5. A proposta pode tocar mais de um arquivo (ex.: criar um teste junto da correção), cada um com seus próprios edits — mas SÓ use "search"/"replace" no arquivo cujo conteúdo foi fornecido; para os demais, apenas "replace_file" de arquivos novos.
 
 Exemplo 1 — edição pontual:
 {

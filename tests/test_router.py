@@ -104,3 +104,32 @@ def test_escalation_policy(store):
     assert router.should_escalate(0.60) is False
     assert router.should_escalate(0.95) is False
     assert router.should_escalate(None) is True     # sem confidence declarada
+
+
+def test_escalation_reasons_context_window(store):
+    router = make_router(store, FakeProvider())
+    window = router.settings.providers.ollama.context_window_tokens
+    small = router.escalation_reasons(prompt_chars=100)
+    huge = router.escalation_reasons(prompt_chars=(window + 1000) * 4)
+    assert small == []
+    assert any("janela" in reason for reason in huge)
+
+
+def test_escalation_reasons_parse_failures_and_task_type(store):
+    router = make_router(store, FakeProvider())
+    assert router.escalation_reasons(parse_failures=1) == []
+    assert any("falhas" in r for r in router.escalation_reasons(parse_failures=2))
+    assert any(
+        "complexo" in r
+        for r in router.escalation_reasons(task_type="architecture_review")
+    )
+    assert router.escalation_reasons(task_type="edit", confidence=0.9) == []
+
+
+def test_estimate_claude_cost_uses_pricing_table(store):
+    router = make_router(store, FakeProvider())
+    pricing = router.settings.providers.claude.pricing
+    estimate = router.estimate_claude_cost(400_000)  # ~100k tokens de entrada
+    expected = 100_000 / 1e6 * pricing.input_usd_per_mtok + 1500 / 1e6 * pricing.output_usd_per_mtok
+    assert estimate == pytest.approx(expected)
+    assert router.estimate_claude_cost(4_000) < estimate

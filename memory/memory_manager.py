@@ -213,6 +213,30 @@ class MemoryManager:
         except (ProviderError, VectorStoreError) as e:
             logger.warning("memória vetorial indisponível para interação #%s: %s", interaction_id, e)
 
+    def index_decision(
+        self, interaction_id: int, text: str, tags: list[str] | None = None
+    ) -> None:
+        """Memória arquitetural (V2): um documento por decisão — best-effort."""
+        try:
+            embeddings = self.embedder.embed([text])
+            self.vectors.upsert(
+                ids=[f"decision:{interaction_id}"],
+                texts=[text],
+                embeddings=embeddings,
+                metadatas=[
+                    {
+                        "type": "decision",
+                        "project": self.project_name,
+                        "interaction_id": interaction_id,
+                        "embedding_model": self.embedder.model,
+                        "tags": ",".join(tags or []),
+                        "timestamp": _now_iso(),
+                    }
+                ],
+            )
+        except (ProviderError, VectorStoreError) as e:
+            logger.warning("memória vetorial indisponível para decisão #%s: %s", interaction_id, e)
+
     def vector_count(self) -> int:
         try:
             return self.vectors.count()

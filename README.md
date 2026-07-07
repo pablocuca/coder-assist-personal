@@ -3,7 +3,7 @@
 CLI de edição de código assistida por IA — local-first, com aprovação obrigatória
 antes de qualquer gravação e trilha de auditoria completa em SQLite.
 
-**Status: V1 concluída** (roadmap da especificação: MVP → V1 → V2).
+**Status: V2 concluída** (roadmap da especificação: MVP → V1 → V2 ✓).
 
 ## Princípios
 
@@ -35,9 +35,13 @@ separado do código-fonte. Overrides locais de configuração:
 cd ~/dev/meu-projeto
 aider index .         # indexa o projeto no banco vetorial (incremental; --full re-indexa)
 aider edit lib/home_page.dart -m "converte para ConsumerWidget"
+aider edit lib/service.dart -m "refatora" --plan          # plano em passos antes de editar
+aider edit lib/complexo.dart -m "..." --provider claude   # escala direto (confirma custo)
 aider ask "por que essa tela usa Provider?"
-aider recall "bug de login google" -k 5      # busca semântica com fontes
+aider recall "bug de login google" -k 5      # busca híbrida (vetorial+FTS5) com fontes
+aider recall "por que migramos?" --synthesize
 aider recall --tag auth
+aider decision "Adotamos Riverpod em vez de Provider" --tag architecture
 aider stats --since 30d
 aider commit          # mensagem sugerida pela IA, editável — nunca automática
 aider history -n 20
@@ -46,6 +50,12 @@ aider undo --list
 aider tag 42 auth
 aider config --show
 ```
+
+Escalada para Claude: o Router recomenda quando a confiança fica abaixo do
+limiar, o contexto excede a janela do modelo local ou há duas falhas de parse
+seguidas — sempre exibindo estimativa de custo e pedindo confirmação (teto
+rígido via `--max-budget-usd`). Autenticação é do próprio Claude Code
+(`claude login`); a ferramenta nunca manipula API keys.
 
 ## Testes
 
@@ -65,7 +75,15 @@ pytest
   FTS5 sincronizado por triggers (degradação do recall), `recall` vetorial com
   proveniência obrigatória, `recall --tag`, `stats`, `aider commit` assistido
   com registro na tabela `commits`, interações indexadas em best-effort.
-- **V2**: provider Claude via Claude Code CLI (`claude -p` headless, cwd neutro,
-  sem ferramentas, `--max-budget-usd`), política de roteamento completa com
-  confirmação de custo, busca híbrida (RRF), `recall --synthesize`, edição
-  multi-arquivo, planejamento de tarefas.
+- **V2 (feito)**: provider Claude via Claude Code CLI (`claude -p` headless,
+  prompt via stdin, cwd neutro, sem ferramentas, `--max-turns 1`,
+  `--max-budget-usd`, custo real do `total_cost_usd`, flags validadas contra
+  `--help`), política de roteamento completa (confiança, janela de contexto,
+  falhas de parse, task complexo) com estimativa e confirmação de custo,
+  busca híbrida RRF + `recall --synthesize` com fontes citadas, edição
+  multi-arquivo com aprovação individual ou em lote, documentos de decisão
+  (`aider decision`), planejamento (`aider edit --plan`), provider Claude
+  testado com binário mockado.
+
+Melhorias opcionais não implementadas (listadas como tal na spec):
+tree-sitter para chunking, Knowledge Graph, streaming.

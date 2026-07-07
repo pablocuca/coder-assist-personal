@@ -24,6 +24,17 @@ class OllamaSettings(BaseModel):
     model: str = "gpt-oss:20b"
     timeout_seconds: int = 120
     max_retries: int = 2
+    context_window_tokens: int = 8192  # janela útil do modelo local (política de escalada)
+
+
+class ClaudePricing(BaseModel):
+    """Tabela de preços usada APENAS para a estimativa exibida antes de escalar.
+
+    O custo real vem do campo total_cost_usd do output JSON do Claude Code.
+    """
+
+    input_usd_per_mtok: float = 3.00
+    output_usd_per_mtok: float = 15.00
 
 
 class ClaudeSettings(BaseModel):
@@ -32,6 +43,7 @@ class ClaudeSettings(BaseModel):
     timeout_seconds: int = 300
     max_turns: int = 1
     max_budget_usd: float = 0.50
+    pricing: ClaudePricing = Field(default_factory=ClaudePricing)
 
 
 class ProvidersSettings(BaseModel):

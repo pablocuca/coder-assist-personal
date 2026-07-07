@@ -76,3 +76,63 @@ def test_recall_keyword_fallback_uses_fts(store):
     results = retriever.recall_keyword("autenticacao", k=5)
     assert results[0].source == f"interação #{iid}"
     assert "refresh token" in results[0].snippet
+
+
+class OrderedFakeVectorStore:
+    """Vetorial que retorna hits em ordem fixa, para testar a fusão RRF."""
+
+    def __init__(self, sources):
+        self.sources = sources
+
+    def query(self, embedding, k=5, where=None):
+        return [
+            {
+                "id": f"v{i}",
+                "text": f"conteudo de {source}",
+                "distance": 0.1 * (i + 1),
+                "metadata": {
+                    "type": "interaction",
+                    "interaction_id": source,
+                    "timestamp": "2026-07-07T00:00:00",
+                },
+            }
+            for i, source in enumerate(self.sources[:k])
+        ]
+
+
+def test_rrf_fuses_and_boosts_sources_in_both_lists(store):
+    p = store.get_or_create_project("app", "/tmp/app")
+    # interação 100 aparece no FTS (keyword) E no vetorial → deve subir ao topo
+    ids = {}
+    for marker in ("umaquery destaque", "outra coisa", "mais outra"):
+        ids[marker] = store.record_interaction(
+            project_id=p, task_type="ask", provider="ollama", model="m",
+            prompt=f"pergunta sobre {marker}", response="r", status="ok",
+        )
+    shared = ids["umaquery destaque"]
+    # vetorial: shared em 2º lugar; keyword: shared é o único resultado
+    vectors = OrderedFakeVectorStore([999, shared, 998])
+    retriever = Retriever(vectors, FakeEmbedder(), store)
+
+    results = retriever.recall_hybrid("umaquery", k=3)
+    assert results[0].source == f"interação #{shared}"
+    # fontes deduplicadas
+    assert len({r.source for r in results}) == len(results)
+
+
+def test_rrf_scores_decrease(store):
+    vectors = OrderedFakeVectorStore([1, 2, 3])
+    retriever = Retriever(vectors, FakeEmbedder(), store)
+    results = retriever.recall_hybrid("qualquer", k=3)
+    scores = [r.score for r in results]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_synthesis_prompt_numbers_sources(store):
+    vectors = OrderedFakeVectorStore([7, 8])
+    retriever = Retriever(vectors, FakeEmbedder(), store)
+    hits = retriever.recall_hybrid("q", k=2)
+    prompt = retriever.build_synthesis_prompt("por que X?", hits)
+    assert "[1]" in prompt and "[2]" in prompt
+    assert "interação #7" in prompt
+    assert "por que X?" in prompt

@@ -5,6 +5,7 @@ providers:
     model: gpt-oss:20b
     timeout_seconds: 120
     max_retries: 2
+    context_window_tokens: 8192    # janela útil do modelo local (política de escalada)
   claude:
     binary: claude                 # deve estar no PATH (npm i -g @anthropic-ai/claude-code)
     model: claude-sonnet-4-6       # passado via --model
@@ -13,6 +14,9 @@ providers:
     max_budget_usd: 0.50           # teto por chamada via --max-budget-usd
     # Autenticação: gerenciada pelo próprio Claude Code (claude login).
     # Esta ferramenta NUNCA armazena ou manipula API keys.
+    pricing:                       # SÓ para a estimativa exibida antes de escalar;
+      input_usd_per_mtok: 3.00     # o custo real vem do total_cost_usd do output JSON
+      output_usd_per_mtok: 15.00
 
 router:
   confidence_threshold: 0.60

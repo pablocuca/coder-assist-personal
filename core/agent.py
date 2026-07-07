@@ -1,20 +1,22 @@
-"""Agent — orquestra o fluxo de edição (seção 9).
+"""Agent — orquestra o fluxo de edição (seção 9) e a política de escalada (V2).
 
-proposta → diff → aprovação explícita → re-verificação de hash → backup →
-gravação atômica → registro. A IA nunca grava diretamente (princípio 1).
+proposta → diff por arquivo → aprovação explícita (individual ou em lote) →
+re-verificação de hash → backup → gravação atômica → registro. A IA nunca
+grava diretamente (princípio 1).
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from cli.ui import UI
 from core.backup import BackupManager
 from core.context_builder import build_ask_prompt, build_edit_prompt
 from core.diff_engine import unified_diff
-from core.errors import ParseError, PatchError
+from core.errors import ParseError, PatchError, PathGuardError
 from core.patch_engine import apply_search_replace, atomic_write, check_replace_file_allowed
 from core.router import Router
 from core.settings import Settings, load_prompt
@@ -29,6 +31,54 @@ logger = logging.getLogger(__name__)
 
 def _sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+@dataclass
+class TargetFile:
+    rel: str
+    path: Path
+    original: str
+    original_hash: str
+    is_new: bool
+    updated: str | None = None  # preenchido após aplicar os edits
+
+
+def apply_proposal(
+    targets: dict[str, TargetFile], proposal: EditProposal
+) -> tuple[list[str], list[tuple[str, PatchError]]]:
+    """Aplica os edits em memória, por arquivo, na ordem da proposta.
+
+    Retorna (arquivos alterados com sucesso, [(arquivo, erro)] dos que falharam).
+    Função pura sobre os TargetFile — nada toca o disco aqui.
+    """
+    contents = {rel: t.original for rel, t in targets.items()}
+    failed: dict[str, PatchError] = {}
+    for edit in proposal.edits:
+        rel = _normalize(edit.file)
+        if rel in failed:
+            continue  # arquivo já falhou; não aplica edits subsequentes nele
+        target = targets[rel]
+        try:
+            if edit.replace_file is not None:
+                check_replace_file_allowed(target.original, target.is_new)
+                contents[rel] = edit.replace_file
+            else:
+                contents[rel] = apply_search_replace(contents[rel], edit.search, edit.replace)
+        except PatchError as e:
+            failed[rel] = e
+
+    changed = []
+    for rel, target in targets.items():
+        if rel in failed:
+            continue
+        if contents[rel] != target.original:
+            target.updated = contents[rel]
+            changed.append(rel)
+    return changed, list(failed.items())
+
+
+def _normalize(file_str: str) -> str:
+    return file_str.strip().lstrip("./")
 
 
 class Agent:
@@ -55,13 +105,18 @@ class Agent:
 
     # --- edit -----------------------------------------------------------------
 
-    def edit(self, file_arg: str, instruction: str, provider: str | None = None) -> None:
-        # 1. Validar path e ler arquivo
+    def edit(
+        self,
+        file_arg: str,
+        instruction: str,
+        provider: str | None = None,
+        plan: bool = False,
+    ) -> None:
+        # 1. Validar path e ler o arquivo principal
         path = validate_path(self.root, file_arg)
         rel = str(path.relative_to(self.root))
         is_new = not path.exists()
         original = "" if is_new else path.read_text(encoding="utf-8")
-        original_hash = _sha256(original)
 
         if not is_new:
             size_kb = path.stat().st_size / 1024
@@ -78,90 +133,200 @@ class Agent:
                     "rollback, mas considere commitar antes."
                 )
 
-        # 2-6. Contexto → Router → parse com uma re-tentativa guiada
         system = load_prompt("edit.md")
         user_prompt = build_edit_prompt(rel, original, instruction, is_new)
+
+        # (V2) Planejamento: plano em passos exibido antes de editar
+        if plan and not self._show_plan(rel, original, instruction, provider):
+            return
+
+        # Escalada de saída: pedida pelo usuário, ou contexto grande demais p/ local
+        proceed, provider = self._resolve_initial_provider(provider, len(user_prompt))
+        if not proceed:
+            self.ui.info("Operação cancelada.")
+            return
+
+        # 2-6. Router → parse com re-tentativa guiada (e oferta de escalada)
         result = self._request_proposal(user_prompt, system, provider)
         if result is None:
             return
-        proposal, interaction_id = result
+        proposal, interaction_id, provider = result
         self.store.update_interaction(interaction_id, confidence=proposal.confidence)
 
-        # MVP: comando edita um único arquivo (multi-arquivo é V2)
-        foreign = [e.file for e in proposal.edits if e.file.strip("./") != rel.strip("./")]
-        if foreign:
-            self.store.update_interaction(interaction_id, status="parse_error")
-            self.ui.error(
-                f"A proposta referencia outro(s) arquivo(s) {foreign}; este comando "
-                f"edita apenas '{rel}'. Edição multi-arquivo chega na V2. Abortado."
-            )
+        # 7. Carregar alvos (multi-arquivo) e aplicar em memória — nunca no disco
+        targets = self._load_targets(proposal, interaction_id)
+        if targets is None:
+            return
+        changed, failed = apply_proposal(targets, proposal)
+        if failed:
+            for failed_rel, error in failed:
+                self.ui.error(f"{failed_rel}: {error}")
+            if not changed:
+                self.store.update_interaction(interaction_id, status="rejected")
+                self.ui.error("Nenhum edit pôde ser aplicado. Operação abortada.")
+                return
+            if not self.ui.confirm(
+                f"Edits de {len(failed)} arquivo(s) falharam; {len(changed)} arquivo(s) "
+                "aplicaram. Continuar apenas com os que aplicaram?"
+            ):
+                self.store.update_interaction(interaction_id, status="rejected")
+                self.ui.info("Operação cancelada.")
+                return
+        if not changed:
+            self.ui.info("A proposta não altera nenhum arquivo. Nada a fazer.")
             return
 
-        # 7. Aplicar edits em memória (nunca no disco ainda)
-        updated, ok = self._apply_edits(original, proposal, is_new, interaction_id)
-        if not ok:
-            return
+        # 8. Exibir explicação + um diff por arquivo
+        self.ui.show_explanation(proposal.explanation, proposal.confidence, files=changed)
+        diffs = {
+            r: unified_diff(targets[r].original, targets[r].updated, r) for r in changed
+        }
+        for changed_rel, diff in diffs.items():
+            self.ui.show_diff(diff, title=changed_rel)
 
-        diff = unified_diff(original, updated, rel)
-        if not diff:
-            self.ui.info("A proposta não altera o arquivo. Nada a fazer.")
-            return
+        reasons = self.router.escalation_reasons(
+            confidence=proposal.confidence, task_type="edit"
+        )
+        if provider != "claude" and reasons:
+            if self.settings.router.auto_escalate:
+                self.ui.warn("Escalada automática: " + "; ".join(reasons))
+                self.store.update_interaction(interaction_id, status="rejected")
+                return self._escalate(file_arg, instruction, len(user_prompt))
+            self.ui.warn("; ".join(reasons) + " — considere [e]scalar.")
 
-        # 8-9. Exibir diff + confidence + explanation, pedir aprovação
-        self.ui.show_proposal(diff, proposal.explanation, proposal.confidence)
-        if provider != "claude" and self.router.should_escalate(proposal.confidence):
-            self.ui.warn(
-                f"Confiança {proposal.confidence:.2f} abaixo do limiar "
-                f"{self.settings.router.confidence_threshold:.2f} — considere [e]scalar."
-            )
-        choice = self.ui.ask_approval()
-
-        if choice == "r":
+        # 9. Aprovação: em lote ou individual (multi-arquivo)
+        approved = self._approve(changed, provider)
+        if approved == "escalate":
+            self.store.update_interaction(interaction_id, status="rejected")
+            return self._escalate(file_arg, instruction, len(user_prompt))
+        if not approved:
             self.store.update_interaction(interaction_id, status="rejected")
             self.ui.info("Proposta rejeitada. Nenhum arquivo foi alterado.")
             return
-        if choice == "e":
-            self.store.update_interaction(interaction_id, status="rejected")
-            self.ui.info("Escalando para Claude…")
-            return self.edit(file_arg, instruction, provider="claude")
 
-        # 10a. Re-verificar hash — arquivo pode ter mudado externamente
-        current = path.read_text(encoding="utf-8") if path.exists() else ""
-        if _sha256(current) != original_hash:
-            self.store.update_interaction(interaction_id, status="rejected")
-            self.ui.error(
-                f"'{rel}' mudou no disco desde a leitura. Abortado sem gravar — "
-                "repita o edit."
+        # 10. Gravar cada arquivo aprovado: re-hash → backup → escrita atômica
+        written = []
+        for approved_rel in approved:
+            target = targets[approved_rel]
+            current = target.path.read_text(encoding="utf-8") if target.path.exists() else ""
+            if _sha256(current) != target.original_hash:
+                self.ui.error(
+                    f"'{approved_rel}' mudou no disco desde a leitura — pulado. "
+                    "Repita o edit para este arquivo."
+                )
+                continue
+            backup = None if target.is_new else self.backups.create(self.root, target.path)
+            atomic_write(target.path, target.updated)
+            self.backups.push_undo(target.path, backup)
+            file_id = self.store.upsert_file(
+                self.project_id, approved_rel, _sha256(target.updated)
             )
-            return
+            self.store.link_interaction_file(interaction_id, file_id)
+            written.append(approved_rel)
+            note = f"backup: {backup.name}" if backup else "arquivo novo"
+            self.ui.success(f"Gravado '{approved_rel}' ({note})")
 
-        # 10b-c. Backup + gravação atômica
-        backup = None if is_new else self.backups.create(self.root, path)
-        atomic_write(path, updated)
-        self.backups.push_undo(path, backup)
-
-        # 11. Registro final
-        self.store.update_interaction(interaction_id, status="approved")
-        file_id = self.store.upsert_file(self.project_id, rel, _sha256(updated))
-        self.store.link_interaction_file(interaction_id, file_id)
-
-        # 12. (V1) Memória vetorial — best-effort, nunca bloqueia a edição
-        if self.memory:
+        # 11-12. Registro final + memória vetorial (best-effort)
+        self.store.update_interaction(
+            interaction_id, status="approved" if written else "rejected"
+        )
+        if written and self.memory:
             self.memory.index_interaction(
-                interaction_id, f"[edit {rel}] {instruction}", proposal.explanation
+                interaction_id,
+                f"[edit {', '.join(written)}] {instruction}",
+                proposal.explanation,
             )
+        if written:
+            self.ui.info(f"Interação #{interaction_id}: {len(written)} arquivo(s) gravado(s).")
 
-        note = f" (backup: {backup.name})" if backup else " (arquivo novo)"
-        self.ui.success(f"Gravado '{rel}'{note} — interação #{interaction_id}")
+    # --- helpers do fluxo de edição ------------------------------------------------
+
+    def _resolve_initial_provider(
+        self, provider: str | None, prompt_chars: int
+    ) -> tuple[bool, str | None]:
+        """Decide o provider de saída; confirma custo se for Claude.
+
+        Retorna (prosseguir?, provider) — provider None significa usar o padrão.
+        """
+        if provider == "claude":
+            return (True, "claude") if self._confirm_claude_cost(prompt_chars) else (False, None)
+        reasons = self.router.escalation_reasons(prompt_chars=prompt_chars)
+        if reasons and provider is None:
+            self.ui.warn("; ".join(reasons))
+            if self.settings.router.auto_escalate or self.ui.confirm("Escalar para Claude?"):
+                if self._confirm_claude_cost(prompt_chars):
+                    return True, "claude"
+                return False, None
+        return True, provider  # None = default (ollama)
+
+    def _confirm_claude_cost(self, prompt_chars: int) -> bool:
+        if not self.settings.router.confirm_cost_before_claude:
+            return True
+        estimate = self.router.estimate_claude_cost(prompt_chars)
+        ceiling = self.settings.providers.claude.max_budget_usd
+        return self.ui.confirm(
+            f"Chamada ao Claude: custo estimado ~${estimate:.3f} "
+            f"(teto rígido --max-budget-usd: ${ceiling:.2f}). Continuar?"
+        )
+
+    def _escalate(self, file_arg: str, instruction: str, prompt_chars: int) -> None:
+        if not self._confirm_claude_cost(prompt_chars):
+            self.ui.info("Escalada cancelada.")
+            return
+        self.ui.info("Escalando para Claude…")
+        return self.edit(file_arg, instruction, provider="claude")
+
+    def _approve(self, changed: list[str], provider: str | None) -> list[str] | str:
+        """Retorna a lista de arquivos aprovados, [] para rejeição, ou 'escalate'."""
+        if len(changed) == 1:
+            choice = self.ui.ask_approval(allow_escalate=provider != "claude")
+            if choice == "e":
+                return "escalate"
+            return changed if choice == "a" else []
+        choice = self.ui.ask_batch_approval(allow_escalate=provider != "claude")
+        if choice == "e":
+            return "escalate"
+        if choice == "r":
+            return []
+        if choice == "a":
+            return changed
+        # individual
+        return [rel for rel in changed if self.ui.confirm(f"Aprovar '{rel}'?")]
+
+    def _load_targets(
+        self, proposal: EditProposal, interaction_id: int
+    ) -> dict[str, TargetFile] | None:
+        """Valida e carrega cada arquivo da proposta. Path fora do root → aborta tudo."""
+        targets: dict[str, TargetFile] = {}
+        for edit in proposal.edits:
+            rel = _normalize(edit.file)
+            if rel in targets:
+                continue
+            try:
+                path = validate_path(self.root, rel)
+            except PathGuardError as e:
+                self.store.update_interaction(interaction_id, status="rejected")
+                self.ui.error(f"Proposta rejeitada — {e}")
+                return None
+            is_new = not path.exists()
+            original = "" if is_new else path.read_text(encoding="utf-8")
+            targets[rel] = TargetFile(
+                rel=rel,
+                path=path,
+                original=original,
+                original_hash=_sha256(original),
+                is_new=is_new,
+            )
+        return targets
 
     def _request_proposal(
         self, user_prompt: str, system: str, provider: str | None
-    ) -> tuple[EditProposal, int] | None:
+    ) -> tuple[EditProposal, int, str | None] | None:
         interaction_id, response = self.router.ask(
             "edit", user_prompt, system=system, provider=provider, json_mode=True
         )
         try:
-            return parse_edit_proposal(response.text), interaction_id
+            return parse_edit_proposal(response.text), interaction_id, provider
         except ParseError:
             self.store.update_interaction(interaction_id, status="parse_error")
             self.ui.warn("Resposta não era JSON válido — re-pedindo ao modelo (1 tentativa)…")
@@ -174,56 +339,74 @@ class Agent:
             "edit", retry_prompt, system=system, provider=provider, json_mode=True
         )
         try:
-            return parse_edit_proposal(response.text), interaction_id
+            return parse_edit_proposal(response.text), interaction_id, provider
         except ParseError as e:
             self.store.update_interaction(interaction_id, status="parse_error")
-            self.ui.error(f"Modelo não retornou JSON válido após re-tentativa. Abortado.\n{e}")
-            return None
+            self.ui.error(f"Modelo não retornou JSON válido após re-tentativa.\n{e}")
 
-    def _apply_edits(
-        self, original: str, proposal: EditProposal, is_new: bool, interaction_id: int
-    ) -> tuple[str, bool]:
-        """Aplica cada edit em memória; falhas parciais pedem decisão ao usuário."""
-        updated = original
-        applied, failed = 0, []
-        for edit in proposal.edits:
-            try:
-                if edit.replace_file is not None:
-                    check_replace_file_allowed(original, is_new)
-                    updated = edit.replace_file
-                else:
-                    updated = apply_search_replace(updated, edit.search, edit.replace)
-                applied += 1
-            except PatchError as e:
-                failed.append(e)
+        # Política V2: duas falhas consecutivas de parse → oferecer escalada
+        reasons = self.router.escalation_reasons(parse_failures=2)
+        if provider != "claude" and reasons:
+            self.ui.warn("; ".join(reasons))
+            if self.ui.confirm("Escalar esta tarefa para Claude?"):
+                if not self._confirm_claude_cost(len(user_prompt)):
+                    return None
+                interaction_id, response = self.router.ask(
+                    "edit", user_prompt, system=system, provider="claude", json_mode=True
+                )
+                try:
+                    return parse_edit_proposal(response.text), interaction_id, "claude"
+                except ParseError as e:
+                    self.store.update_interaction(interaction_id, status="parse_error")
+                    self.ui.error(f"Claude também não retornou JSON válido. Abortado.\n{e}")
+        return None
 
-        if failed:
-            for error in failed:
-                self.ui.error(str(error))
-            if applied == 0:
-                self.store.update_interaction(interaction_id, status="rejected")
-                self.ui.error("Nenhum edit pôde ser aplicado. Operação abortada.")
-                return original, False
-            if not self.ui.confirm(
-                f"{len(failed)} edit(s) falharam e {applied} aplicaram. "
-                "Continuar apenas com os que aplicaram?"
-            ):
-                self.store.update_interaction(interaction_id, status="rejected")
-                self.ui.info("Operação cancelada.")
-                return original, False
-        return updated, True
+    def _show_plan(
+        self, rel: str, content: str, instruction: str, provider: str | None
+    ) -> bool:
+        """Gera e exibe o plano em passos; retorna False para abortar."""
+        prompt = (
+            f"Arquivo alvo: {rel}\n\nTrecho inicial do arquivo:\n```\n{content[:4000]}\n```\n\n"
+            f"Tarefa: {instruction}"
+        )
+        _, response = self.router.ask(
+            "plan", prompt, system=load_prompt("plan.md"), provider=provider
+        )
+        self.ui.print_markdown(response.text)
+        return self.ui.confirm("Prosseguir com a edição seguindo este plano?")
 
     # --- ask ------------------------------------------------------------------
 
     def ask(self, question: str, provider: str | None = None) -> None:
         system = load_prompt("ask.md")
         prompt = build_ask_prompt(question, self.root.name)
+        if provider == "claude" and not self._confirm_claude_cost(len(prompt)):
+            return
         interaction_id, response = self.router.ask(
             "ask", prompt, system=system, provider=provider
         )
         self.ui.print_markdown(response.text)
         if self.memory:
             self.memory.index_interaction(interaction_id, question, response.text)
+
+    # --- decisões arquiteturais (V2) -----------------------------------------------
+
+    def decision(self, text: str, tags: list[str] | None = None) -> None:
+        """Registra um documento de decisão (um por decisão — seção 12)."""
+        interaction_id = self.store.record_interaction(
+            project_id=self.project_id,
+            task_type="decision",
+            provider="user",
+            model="-",
+            prompt=text,
+            status="ok",
+            git_branch=self.router.git_branch,
+        )
+        for tag in tags or []:
+            self.store.add_tag(interaction_id, tag)
+        if self.memory:
+            self.memory.index_decision(interaction_id, text, tags)
+        self.ui.success(f"Decisão registrada como interação #{interaction_id}.")
 
     # --- undo -----------------------------------------------------------------
 

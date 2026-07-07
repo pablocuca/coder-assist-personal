@@ -106,12 +106,51 @@ class Router:
         )
         return interaction_id, response
 
-    def should_escalate(self, confidence: float | None) -> bool:
-        """Política mínima do MVP: confidence é um sinal, não o único critério.
+    # --- política de roteamento (seção 10, V2) -----------------------------------
 
-        A política completa (contexto excedido, falhas consecutivas de parse,
-        task_type complexo) entra na V2.
-        """
+    # task_types considerados complexos — escalada recomendada de saída
+    COMPLEX_TASK_TYPES = {"architecture_review"}
+
+    def should_escalate(self, confidence: float | None) -> bool:
+        """Confidence é um sinal, não o único critério (LLMs são mal calibrados)."""
         if confidence is None:
             return True
         return confidence < self.settings.router.confidence_threshold
+
+    def escalation_reasons(
+        self,
+        confidence: float | None = None,
+        prompt_chars: int | None = None,
+        parse_failures: int = 0,
+        task_type: str | None = None,
+    ) -> list[str]:
+        """Motivos para escalar ao Claude. Qualquer um é suficiente."""
+        reasons = []
+        threshold = self.settings.router.confidence_threshold
+        if confidence is not None and confidence < threshold:
+            reasons.append(f"confidence {confidence:.2f} abaixo do limiar {threshold:.2f}")
+        window = self.settings.providers.ollama.context_window_tokens
+        if prompt_chars is not None and prompt_chars / 4 > window:
+            reasons.append(
+                f"contexto (~{prompt_chars // 4} tokens) excede a janela útil "
+                f"do modelo local ({window})"
+            )
+        if parse_failures >= 2:
+            reasons.append(f"{parse_failures} falhas consecutivas de parse/patch na mesma tarefa")
+        if task_type in self.COMPLEX_TASK_TYPES:
+            reasons.append(f"task_type '{task_type}' marcado como complexo")
+        return reasons
+
+    def estimate_claude_cost(self, prompt_chars: int) -> float:
+        """Estimativa GROSSEIRA pré-escalada (tabela de preços da config).
+
+        O teto rígido é o --max-budget-usd; o custo real vem do total_cost_usd.
+        Assume ~4 chars/token na entrada e ~1500 tokens de saída.
+        """
+        pricing = self.settings.providers.claude.pricing
+        input_tokens = prompt_chars / 4
+        output_tokens = 1500
+        return (
+            input_tokens / 1_000_000 * pricing.input_usd_per_mtok
+            + output_tokens / 1_000_000 * pricing.output_usd_per_mtok
+        )
