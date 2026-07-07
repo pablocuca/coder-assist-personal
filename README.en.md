@@ -28,7 +28,7 @@ Prerequisites:
 - **[Ollama](https://ollama.com)** running locally with the configured model:
   `ollama pull gpt-oss:20b` (and `ollama pull nomic-embed-text` for the vector memory)
 - Optional: **Claude Code CLI** authenticated (`claude login`) to escalate complex
-  tasks — the tool never handles API keys
+  tasks — see the [Using Claude](#using-claude) section
 
 ```bash
 cd ~/dev/coder-assist-personal  # or wherever the repo is
@@ -228,14 +228,80 @@ parsed as YAML (numbers, booleans, and strings work naturally). The
 configuration is revalidated on the spot — an invalid value is rejected with
 a clear error.
 
-## Escalation to Claude
+## Using Claude
 
-The Router recommends escalating from Ollama to Claude when confidence falls
-below the threshold, the context exceeds the local model's window, or there
-are two consecutive parse failures — always showing a **cost estimate and
-asking for confirmation** (hard cap via `providers.claude.max_budget_usd`).
-Authentication belongs to Claude Code itself (`claude login`); the tool never
-handles API keys.
+By default everything runs on **Ollama** (local and free). Claude is the
+"reinforcement" provider for tasks the local model can't handle — and its
+use is always **paid, explicit, and confirmed**.
+
+### Initial setup (once)
+
+1. Install the [Claude Code CLI](https://claude.com/claude-code):
+
+   ```bash
+   npm install -g @anthropic-ai/claude-code
+   ```
+
+2. Authenticate with your account:
+
+   ```bash
+   claude login
+   ```
+
+3. Verify:
+
+   ```bash
+   claude --version
+   ```
+
+Authentication belongs to Claude Code itself — the tool **never handles API
+keys**; it only invokes the already-authenticated `claude` binary.
+
+### The two ways to use it
+
+**1. Force Claude on a command** — when you already know the task is complex:
+
+```bash
+coder-dev edit lib/complex.dart -m "refactor the payment flow" --provider claude
+coder-dev ask "explain the offline sync architecture" --provider claude
+```
+
+**2. Escalation recommended by the Router** — in the normal flow (without
+`--provider`), the Router monitors the local model's response and
+**recommends** escalating when:
+
+- the response confidence falls below the threshold (`router.confidence_threshold`, default 0.60);
+- the context exceeds the local model's window (`providers.ollama.context_window_tokens`);
+- there are two consecutive failures parsing the response.
+
+In both cases the behavior is the same: before calling Claude, the tool shows
+the **cost estimate in USD and asks for your confirmation**. Nothing is
+charged without your approval. The real cost of the call (reported by Claude
+Code itself) is recorded in the history — see the running total with
+`coder-dev stats`.
+
+### Cost control and configuration
+
+| Key                                    | Default             | Effect                                              |
+| -------------------------------------- | ------------------- | --------------------------------------------------- |
+| `providers.claude.max_budget_usd`      | `0.50`              | Hard cap per call — Claude Code aborts if exceeded  |
+| `providers.claude.model`               | `claude-sonnet-4-6` | Model used for escalations                          |
+| `providers.claude.timeout_seconds`     | `300`               | Call timeout                                        |
+| `router.confidence_threshold`          | `0.60`              | Below this, the Router recommends escalating        |
+| `router.confirm_cost_before_claude`    | `true`              | Asks for cost confirmation before each call         |
+
+```bash
+coder-dev config --set providers.claude.max_budget_usd=1.00
+coder-dev config --set providers.claude.model=claude-sonnet-4-6
+```
+
+### Security
+
+The call is headless and isolated: prompt via stdin, **no tools**, a single
+turn (`--max-turns 1`), and a neutral working directory — Claude **does not
+read or edit your project directly**; it only sees the context the tool puts
+in the prompt, and any proposed edit goes through the same diff + approval +
+backup flow as always.
 
 ## Backup and migrating to another machine
 

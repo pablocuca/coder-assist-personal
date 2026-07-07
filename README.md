@@ -28,7 +28,7 @@ Pré-requisitos:
 - **[Ollama](https://ollama.com)** rodando localmente com o modelo configurado:
   `ollama pull gpt-oss:20b` (e `ollama pull nomic-embed-text` para a memória vetorial)
 - Opcional: **Claude Code CLI** autenticado (`claude login`) para escalar tarefas
-  complexas — a ferramenta nunca manipula API keys
+  complexas — veja a seção [Usando o Claude](#usando-o-claude)
 
 ```bash
 cd ~/dev/coder-assist-personal  # ou onde estiver o repo
@@ -229,14 +229,80 @@ interpretado como YAML (números, booleanos e strings funcionam naturalmente).
 A configuração é revalidada na hora — um valor inválido é rejeitado com erro
 claro.
 
-## Escalada para o Claude
+## Usando o Claude
 
-O Router recomenda escalar do Ollama para o Claude quando a confiança fica
-abaixo do limiar, o contexto excede a janela do modelo local ou há duas
-falhas de parse seguidas — sempre exibindo **estimativa de custo e pedindo
-confirmação** (teto rígido via `providers.claude.max_budget_usd`).
-Autenticação é do próprio Claude Code (`claude login`); a ferramenta nunca
-manipula API keys.
+Por padrão tudo roda no **Ollama** (local e gratuito). O Claude é o provider
+"de reforço" para tarefas que o modelo local não dá conta — e seu uso é
+sempre **pago, explícito e confirmado**.
+
+### Configuração inicial (uma vez)
+
+1. Instale o [Claude Code CLI](https://claude.com/claude-code):
+
+   ```bash
+   npm install -g @anthropic-ai/claude-code
+   ```
+
+2. Autentique com sua conta:
+
+   ```bash
+   claude login
+   ```
+
+3. Verifique:
+
+   ```bash
+   claude --version
+   ```
+
+A autenticação é do próprio Claude Code — a ferramenta **nunca manipula API
+keys**; ela apenas invoca o binário `claude` já autenticado.
+
+### As duas formas de usar
+
+**1. Forçar o Claude em um comando** — quando você já sabe que a tarefa é
+complexa:
+
+```bash
+coder-dev edit lib/complexo.dart -m "refatora o fluxo de pagamento" --provider claude
+coder-dev ask "explique a arquitetura de sincronização offline" --provider claude
+```
+
+**2. Escalada recomendada pelo Router** — no fluxo normal (sem `--provider`),
+o Router monitora a resposta do modelo local e **recomenda** escalar quando:
+
+- a confiança da resposta fica abaixo do limiar (`router.confidence_threshold`, padrão 0.60);
+- o contexto excede a janela do modelo local (`providers.ollama.context_window_tokens`);
+- há duas falhas seguidas de interpretação da resposta (parse).
+
+Nos dois casos o comportamento é o mesmo: antes de chamar o Claude, a
+ferramenta exibe a **estimativa de custo em USD e pede sua confirmação**.
+Nada é cobrado sem você aprovar. O custo real da chamada (informado pelo
+próprio Claude Code) fica registrado no histórico — veja o acumulado com
+`coder-dev stats`.
+
+### Controle de custo e configuração
+
+| Chave                                  | Padrão              | Efeito                                              |
+| -------------------------------------- | ------------------- | --------------------------------------------------- |
+| `providers.claude.max_budget_usd`      | `0.50`              | Teto rígido por chamada — o Claude Code aborta se exceder |
+| `providers.claude.model`               | `claude-sonnet-4-6` | Modelo usado nas escaladas                          |
+| `providers.claude.timeout_seconds`     | `300`               | Timeout da chamada                                  |
+| `router.confidence_threshold`          | `0.60`              | Abaixo disso, o Router recomenda escalar            |
+| `router.confirm_cost_before_claude`    | `true`              | Pede confirmação de custo antes de cada chamada     |
+
+```bash
+coder-dev config --set providers.claude.max_budget_usd=1.00
+coder-dev config --set providers.claude.model=claude-sonnet-4-6
+```
+
+### Segurança
+
+A chamada é headless e isolada: prompt via stdin, **sem ferramentas**, uma
+única rodada (`--max-turns 1`) e diretório de trabalho neutro — o Claude
+**não lê nem edita seu projeto diretamente**; ele só vê o contexto que a
+ferramenta coloca no prompt, e toda edição proposta passa pelo mesmo fluxo
+de diff + aprovação + backup de sempre.
 
 ## Backup e migração para outra máquina
 
