@@ -133,29 +133,57 @@ class ClaudeCliProvider(BaseProvider):
         finally:
             shutil.rmtree(neutral_dir, ignore_errors=True)
 
+        stdout = result.stdout.decode("utf-8", errors="replace")
         stderr = result.stderr.decode("utf-8", errors="replace").strip()
         if stderr:
             logger.debug("claude stderr: %s", stderr)  # log de progresso, nunca parseado
 
         if result.returncode != 0:
-            raise ProviderError(self._describe_failure(result.returncode, stderr))
+            raise ProviderError(self._describe_failure(result.returncode, stderr, stdout))
 
-        return self._parse_output(result.stdout.decode("utf-8", errors="replace"))
+        return self._parse_output(stdout)
 
-    def _describe_failure(self, returncode: int, stderr: str) -> str:
-        lowered = stderr.lower()
+    def _describe_failure(self, returncode: int, stderr: str, stdout: str = "") -> str:
+        # Com --output-format json, o Claude Code reporta erros no STDOUT
+        # (JSON com is_error/result) e pode sair com stderr vazio — a causa
+        # precisa ser procurada nos dois.
+        detail = stderr or self._error_from_stdout(stdout)
+        lowered = f"{stderr}\n{stdout}".lower()
         if any(hint in lowered for hint in _AUTH_HINTS):
             return (
                 "Claude Code não está autenticado. Rode `claude login` "
-                f"(exit {returncode}): {stderr[:300]}"
+                f"(exit {returncode}): {detail[:300]}"
             )
         if any(hint in lowered for hint in _LIMIT_HINTS):
             return (
                 f"Chamada interrompida por limite (--max-budget-usd "
                 f"{self.cfg.max_budget_usd} / --max-turns {self.cfg.max_turns}). "
-                f"Ajuste em settings.yaml e repita (exit {returncode}): {stderr[:300]}"
+                f"Ajuste em settings.yaml e repita (exit {returncode}): {detail[:300]}"
             )
-        return f"Claude Code falhou (exit {returncode}): {stderr[:500]}"
+        if not detail:
+            return (
+                f"Claude Code falhou (exit {returncode}) sem mensagem no stdout/stderr. "
+                "Diagnostique direto no terminal: echo teste | claude -p "
+                f"--model {self.cfg.model} --output-format json"
+            )
+        return f"Claude Code falhou (exit {returncode}): {detail[:500]}"
+
+    @staticmethod
+    def _error_from_stdout(stdout: str) -> str:
+        """Extrai a mensagem de erro do output JSON; texto cru como fallback."""
+        text = stdout.strip()
+        if not text:
+            return ""
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+        if isinstance(data, dict):
+            for key in ("result", "error", "message"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return text
 
     def _parse_output(self, stdout: str) -> ProviderResponse:
         try:

@@ -134,6 +134,36 @@ def test_budget_exceeded_reports_cause(tmp_path):
         provider.complete("prompt")
 
 
+def test_error_only_on_stdout_json_is_surfaced(tmp_path):
+    """Regressão: com --output-format json, o Claude Code reporta erros no
+    STDOUT e pode sair com stderr vazio — a causa não pode ser engolida."""
+    body = (
+        'print(json.dumps({"type": "result", "is_error": True,'
+        ' "result": "Credit balance is too low"}))\n'
+        "sys.exit(1)\n"
+    )
+    provider = _provider(_make_fake_claude(tmp_path, body))
+    with pytest.raises(ProviderError, match="Credit balance is too low"):
+        provider.complete("prompt")
+
+
+def test_auth_error_on_stdout_guides_login(tmp_path):
+    body = (
+        'print(json.dumps({"result": "OAuth token expired. Please run /login"}))\n'
+        "sys.exit(1)\n"
+    )
+    provider = _provider(_make_fake_claude(tmp_path, body))
+    with pytest.raises(ProviderError, match="claude login"):
+        provider.complete("prompt")
+
+
+def test_failure_with_no_output_suggests_terminal_diagnosis(tmp_path):
+    body = "sys.exit(1)\n"
+    provider = _provider(_make_fake_claude(tmp_path, body))
+    with pytest.raises(ProviderError, match="sem mensagem no stdout/stderr"):
+        provider.complete("prompt")
+
+
 def test_timeout_raises_provider_error(tmp_path):
     body = "time.sleep(10)\nprint('{}')\n"
     provider = _provider(_make_fake_claude(tmp_path, body), timeout_seconds=1)
