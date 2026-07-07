@@ -18,7 +18,10 @@ from core.errors import ProviderError
 from core.settings import ClaudeSettings
 from providers.claude_cli_provider import ClaudeCliProvider
 
-HELP_TEXT = "Usage: claude [options]\n  --model  --output-format  --max-turns  --max-budget-usd"
+HELP_TEXT = (
+    "Usage: claude [options]\n"
+    "  --model  --output-format  --max-turns  --max-budget-usd  --tools"
+)
 
 SUCCESS_PAYLOAD = {
     "result": '{"confidence": 0.9, "explanation": "ok", "edits": []}',
@@ -72,6 +75,7 @@ def test_success_parses_result_and_real_cost(tmp_path):
     # prompt via stdin (nunca argumento), com o system embutido
     assert "edite o arquivo x" in invocation["prompt"]
     assert "regras do sistema" in invocation["prompt"]
+    assert "somente-texto" in invocation["prompt"]  # aviso de que não há ferramentas
     assert all("edite o arquivo" not in arg for arg in invocation["argv"])
     # flags obrigatórias da seção 10
     argv = invocation["argv"]
@@ -79,6 +83,9 @@ def test_success_parses_result_and_real_cost(tmp_path):
     assert "--output-format" in argv and "json" in argv
     assert "--max-turns" in argv and "1" in argv
     assert "--max-budget-usd" in argv
+    # ferramentas desabilitadas — sem isso o modelo tenta tool_use e a
+    # chamada morre em error_max_turns com --max-turns 1
+    assert "--tools" in argv and argv[argv.index("--tools") + 1] == ""
     # cwd neutro: nunca o diretório do projeto/teste
     assert invocation["cwd"] != os.getcwd()
     assert "coder-assist-claude-neutral-" in invocation["cwd"]
@@ -129,6 +136,19 @@ def test_auth_error_guides_login(tmp_path):
 
 def test_budget_exceeded_reports_cause(tmp_path):
     body = "sys.stderr.write('Execution stopped: max budget exceeded')\nsys.exit(1)\n"
+    provider = _provider(_make_fake_claude(tmp_path, body))
+    with pytest.raises(ProviderError, match="limite"):
+        provider.complete("prompt")
+
+
+def test_max_turns_error_reports_limit(tmp_path):
+    """Regressão: subtype error_max_turns (modelo tentou tool_use) deve
+    produzir a mensagem de limite, não um erro vazio."""
+    body = (
+        'print(json.dumps({"type": "result", "subtype": "error_max_turns",'
+        ' "is_error": True, "result": None, "num_turns": 2}))\n'
+        "sys.exit(1)\n"
+    )
     provider = _provider(_make_fake_claude(tmp_path, body))
     with pytest.raises(ProviderError, match="limite"):
         provider.complete("prompt")

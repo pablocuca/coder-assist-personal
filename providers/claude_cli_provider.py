@@ -2,8 +2,10 @@
 
 Regras críticas implementadas aqui:
 1. `subprocess.run` sem shell=True; prompt via STDIN (nunca argumento).
-2. Comportamento agêntico neutralizado: nenhuma ferramenta pré-aprovada,
+2. Comportamento agêntico neutralizado: ferramentas desabilitadas (`--tools ""`),
    `--max-turns 1`, cwd em diretório neutro/vazio — todo o contexto vai no prompt.
+   Sem `--tools ""`, o modelo tenta usar ferramentas em perguntas sobre o
+   projeto, o turno único acaba em tool_use e a chamada morre em error_max_turns.
 3. Autenticação é do próprio Claude Code (`claude login`); esta ferramenta
    nunca manipula API keys e NÃO usa `--bare`.
 4. `--output-format json`: `result` é a resposta; `total_cost_usd` é o custo
@@ -27,10 +29,18 @@ from providers.base_provider import BaseProvider, ProviderResponse
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_FLAGS = ("--model", "--output-format", "--max-turns", "--max-budget-usd")
+REQUIRED_FLAGS = ("--model", "--output-format", "--max-turns", "--max-budget-usd", "--tools")
 
 _AUTH_HINTS = ("login", "logged in", "authenticate", "unauthorized", "api key", "oauth")
-_LIMIT_HINTS = ("budget", "max turns", "max-turns", "limit")
+_LIMIT_HINTS = ("budget", "max turns", "max-turns", "max_turns", "limit")
+
+# O binário é o Claude Code, treinado para agir com ferramentas — sem este
+# aviso ele tenta escrever chamadas de ferramenta mesmo com --tools "".
+_NO_TOOLS_NOTE = (
+    "Você está em modo somente-texto: não há ferramentas nem acesso a arquivos "
+    "ou ao sistema — todo o contexto necessário já está nesta mensagem. "
+    "Responda diretamente, sem tentar usar ferramentas."
+)
 
 
 class ClaudeCliProvider(BaseProvider):
@@ -105,6 +115,7 @@ class ClaudeCliProvider(BaseProvider):
         self._validate_flags()
 
         full_prompt = f"{system}\n\n---\n\n{prompt}" if system else prompt
+        full_prompt = f"{_NO_TOOLS_NOTE}\n\n{full_prompt}"
         command = [
             self.cfg.binary,
             "-p",
@@ -112,6 +123,7 @@ class ClaudeCliProvider(BaseProvider):
             "--output-format", "json",
             "--max-turns", str(self.cfg.max_turns),
             "--max-budget-usd", str(self.cfg.max_budget_usd),
+            "--tools", "",  # sem ferramentas: resposta direta em 1 turno
         ]
 
         # cwd neutro: impede o agente de ler/editar o projeto por conta própria
