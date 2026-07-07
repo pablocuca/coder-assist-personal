@@ -348,7 +348,7 @@ class SQLiteStore:
     # --- estatísticas (seção 18) ---------------------------------------------------
 
     def stats(self, project: str | None = None, since: str | None = None) -> dict:
-        """Agregados para `aider stats`. `since` é um timestamp ISO (inclusive)."""
+        """Agregados para `coder-dev stats`. `since` é um timestamp ISO (inclusive)."""
         where, params = "WHERE 1=1", []
         if project:
             where += " AND p.name = ?"

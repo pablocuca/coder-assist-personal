@@ -3,7 +3,7 @@
 Fallback opcional: sentence-transformers/all-MiniLM-L6-v2, usado apenas se o
 pacote estiver instalado (`pip install sentence-transformers`) e o Ollama não
 responder. O nome do modelo acompanha cada vetor nos metadados — se o modelo
-mudar, é preciso re-indexar (`aider index . --full`).
+mudar, é preciso re-indexar (`coder-dev index . --full`).
 """
 
 from __future__ import annotations

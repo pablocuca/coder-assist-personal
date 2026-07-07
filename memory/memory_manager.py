@@ -1,6 +1,6 @@
 """MemoryManager — indexação (seção 13) e registro de interações no vetorial.
 
-- `aider index .`: incremental por padrão (invalidação por hash — seção 12),
+- `coder-dev index .`: incremental por padrão (invalidação por hash — seção 12),
   respeitando .gitignore real (pathspec) + extra_ignores, pulando binários.
 - Interações: embedadas em best-effort após cada edit/ask; falha degrada com
   aviso, nunca bloqueia a edição (seção 19).

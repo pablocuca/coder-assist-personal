@@ -18,7 +18,7 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-aider = "main:app"
+coder-dev = "main:app"
 
 [build-system]
 requires = ["hatchling"]
