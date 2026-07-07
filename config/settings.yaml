@@ -1,0 +1,44 @@
+providers:
+  default: ollama
+  ollama:
+    base_url: http://localhost:11434
+    model: gpt-oss:20b
+    timeout_seconds: 120
+    max_retries: 2
+  claude:
+    binary: claude                 # deve estar no PATH (npm i -g @anthropic-ai/claude-code)
+    model: claude-sonnet-4-6       # passado via --model
+    timeout_seconds: 300
+    max_turns: 1                   # uma resposta, sem loop agêntico
+    max_budget_usd: 0.50           # teto por chamada via --max-budget-usd
+    # Autenticação: gerenciada pelo próprio Claude Code (claude login).
+    # Esta ferramenta NUNCA armazena ou manipula API keys.
+
+router:
+  confidence_threshold: 0.60
+  auto_escalate: false             # se true, escala sem perguntar
+  confirm_cost_before_claude: true
+
+embeddings:
+  model: nomic-embed-text
+  chunk_max_lines: 80
+  chunk_overlap_lines: 10
+
+editing:
+  require_approval: true           # não pode ser desativado no MVP/V1
+  backup_retention: 20             # backups por arquivo
+  max_file_size_kb: 512            # arquivos maiores exigem confirmação
+
+indexing:
+  include: ["*.dart", "*.py", "*.ts", "*.js", "*.md", "*.yaml", "*.json"]
+  respect_gitignore: true
+  extra_ignores: [".git/", "build/", "node_modules/", ".dart_tool/", "venv/", ".venv/", "dist/", "target/", "db/", "backups/", "indexes/", "logs/"]
+  max_indexed_file_kb: 256
+
+logging:
+  level: INFO
+  format: json
+  redact_secrets: true
+
+git:
+  auto_commit: false               # commit apenas via comando explícito

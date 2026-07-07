@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Estado em runtime — nunca versionado (vive em ~/.personal-aider por padrão,
+# mas ignorado aqui também por segurança caso alguém aponte o state_dir para o repo)
+db/
+logs/
+backups/
+indexes/
