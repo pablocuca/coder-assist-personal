@@ -2,15 +2,18 @@
 
 Regras críticas implementadas aqui:
 1. `subprocess.run` sem shell=True; prompt via STDIN (nunca argumento).
-2. Comportamento agêntico neutralizado: ferramentas desabilitadas via
-   `--tools NoOp` (nome inexistente → conjunto efetivo vazio), `--max-turns 1`,
-   cwd em diretório neutro/vazio — todo o contexto vai no prompt. Sem isso, o
-   modelo tenta usar ferramentas em perguntas sobre o projeto, o turno único
-   acaba em tool_use e a chamada morre em error_max_turns.
-   Formas descartadas (PRs #8/#9): `--tools ""` e `--disallowed-tools "*"`
-   disparam DLP em gateways corporativos (argumento vazio/curinga); lista
-   explícita em --disallowed-tools não tira as ferramentas da visão do modelo,
-   que insiste nelas a cada negação e estoura o max-turns do mesmo jeito.
+2. Comportamento agêntico neutralizado em três camadas: instrução de
+   somente-texto no system prompt (--append-system-prompt — o modelo obedece
+   e responde em 1 turno), negação local de todas as ferramentas
+   (--disallowed-tools com lista explícita — backup se tentar mesmo assim) e
+   cwd em diretório neutro/vazio. IMPORTANTE: as ferramentas precisam
+   continuar presentes na requisição à API — gateways corporativos (DLP)
+   bloqueiam requisições do Claude Code sem o array de ferramentas padrão,
+   o que descarta `--tools ""`, `--tools <nome-falso>` e
+   `--disallowed-tools "*"` (todas removem o array e foram bloqueadas em
+   ambiente corporativo real). A instrução precisa estar no SYSTEM prompt:
+   na mensagem do usuário o modelo a ignora e insiste nas ferramentas
+   anunciadas, estourando o max-turns.
 3. Autenticação é do próprio Claude Code (`claude login`); esta ferramenta
    nunca manipula API keys e NÃO usa `--bare`.
 4. `--output-format json`: `result` é a resposta; `total_cost_usd` é o custo
@@ -34,17 +37,34 @@ from providers.base_provider import BaseProvider, ProviderResponse
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_FLAGS = ("--model", "--output-format", "--max-turns", "--max-budget-usd", "--tools")
+REQUIRED_FLAGS = (
+    "--model",
+    "--output-format",
+    "--max-turns",
+    "--max-budget-usd",
+    "--disallowed-tools",
+    "--append-system-prompt",
+)
+
+# Lista explícita (curinga "*" dispara DLP): nega localmente cada ferramenta
+# nativa. Ferramentas novas de versões futuras ficam de fora da lista, mas a
+# instrução de system prompt cobre; se ainda assim uma escapar, o sintoma é o
+# error_max_turns visível, nunca execução silenciosa fora do diretório neutro.
+_DISALLOWED_TOOLS = (
+    "Task,Bash,Glob,Grep,Read,Edit,Write,NotebookEdit,WebFetch,WebSearch,"
+    "TodoWrite,SlashCommand,Skill,KillShell,BashOutput,ExitPlanMode,AskUserQuestion"
+)
 
 _AUTH_HINTS = ("login", "logged in", "authenticate", "unauthorized", "api key", "oauth")
 _LIMIT_HINTS = ("budget", "max turns", "max-turns", "max_turns", "limit")
 
-# O binário é o Claude Code, treinado para agir com ferramentas — sem este
-# aviso ele tenta escrever chamadas de ferramenta mesmo com --tools "".
+# Vai no SYSTEM prompt (--append-system-prompt): na mensagem do usuário o
+# modelo ignora o aviso e insiste nas ferramentas anunciadas na requisição.
 _NO_TOOLS_NOTE = (
-    "Você está em modo somente-texto: não há ferramentas nem acesso a arquivos "
-    "ou ao sistema — todo o contexto necessário já está nesta mensagem. "
-    "Responda diretamente, sem tentar usar ferramentas."
+    "Nesta sessão todas as ferramentas estão desabilitadas por política — "
+    "qualquer chamada de ferramenta falhará. Não tente usar ferramentas. "
+    "Responda diretamente em texto, usando apenas o contexto fornecido na "
+    "mensagem; se faltar informação, diga o que falta."
 )
 
 
@@ -120,7 +140,6 @@ class ClaudeCliProvider(BaseProvider):
         self._validate_flags()
 
         full_prompt = f"{system}\n\n---\n\n{prompt}" if system else prompt
-        full_prompt = f"{_NO_TOOLS_NOTE}\n\n{full_prompt}"
         command = [
             self.cfg.binary,
             "-p",
@@ -128,10 +147,11 @@ class ClaudeCliProvider(BaseProvider):
             "--output-format", "json",
             "--max-turns", str(self.cfg.max_turns),
             "--max-budget-usd", str(self.cfg.max_budget_usd),
-            # Sem ferramentas (nome inexistente → conjunto vazio): resposta
-            # direta em 1 turno. `--tools ""` e `--disallowed-tools "*"`
-            # teriam o mesmo efeito, mas disparam DLP corporativo.
-            "--tools", "NoOp",
+            # Neutralização em camadas (ver docstring do módulo): o array de
+            # ferramentas fica na requisição (exigência de gateways DLP), tudo
+            # negado localmente e o system prompt instrui a não tentar.
+            "--disallowed-tools", _DISALLOWED_TOOLS,
+            "--append-system-prompt", _NO_TOOLS_NOTE,
         ]
 
         # cwd neutro: impede o agente de ler/editar o projeto por conta própria

@@ -20,7 +20,8 @@ from providers.claude_cli_provider import ClaudeCliProvider
 
 HELP_TEXT = (
     "Usage: claude [options]\n"
-    "  --model  --output-format  --max-turns  --max-budget-usd  --tools"
+    "  --model  --output-format  --max-turns  --max-budget-usd\n"
+    "  --disallowed-tools  --append-system-prompt"
 )
 
 SUCCESS_PAYLOAD = {
@@ -75,7 +76,6 @@ def test_success_parses_result_and_real_cost(tmp_path):
     # prompt via stdin (nunca argumento), com o system embutido
     assert "edite o arquivo x" in invocation["prompt"]
     assert "regras do sistema" in invocation["prompt"]
-    assert "somente-texto" in invocation["prompt"]  # aviso de que não há ferramentas
     assert all("edite o arquivo" not in arg for arg in invocation["argv"])
     # flags obrigatórias da seção 10
     argv = invocation["argv"]
@@ -83,12 +83,16 @@ def test_success_parses_result_and_real_cost(tmp_path):
     assert "--output-format" in argv and "json" in argv
     assert "--max-turns" in argv and "1" in argv
     assert "--max-budget-usd" in argv
-    # ferramentas desabilitadas — sem isso o modelo tenta tool_use e a
-    # chamada morre em error_max_turns com --max-turns 1. Nome inexistente
-    # (e não `--tools ""` nem `--disallowed-tools "*"`) para não disparar
-    # DLP corporativo com argumento vazio/curinga.
-    assert "--tools" in argv
-    assert argv[argv.index("--tools") + 1] == "NoOp"
+    # Neutralização agêntica em camadas, mantendo o array de ferramentas na
+    # requisição (gateways DLP bloqueiam requisições sem ele — nada de
+    # `--tools ""`, `--tools <fake>` ou `--disallowed-tools "*"`):
+    # negação local explícita + instrução de somente-texto no SYSTEM prompt.
+    assert "--disallowed-tools" in argv
+    denied = argv[argv.index("--disallowed-tools") + 1]
+    assert "Bash" in denied and "Edit" in denied and "*" not in denied
+    assert "--append-system-prompt" in argv
+    note = argv[argv.index("--append-system-prompt") + 1]
+    assert "ferramentas" in note and "desabilitadas" in note
     # cwd neutro: nunca o diretório do projeto/teste
     assert invocation["cwd"] != os.getcwd()
     assert "coder-assist-claude-neutral-" in invocation["cwd"]
