@@ -17,6 +17,7 @@ providers:
     pricing:                       # SÓ para a estimativa exibida antes de escalar;
       input_usd_per_mtok: 3.00     # o custo real vem do total_cost_usd do output JSON
       output_usd_per_mtok: 15.00
+      overhead_tokens: 23000       # sistema do Claude Code, presente em toda chamada
 
 router:
   confidence_threshold: 0.60

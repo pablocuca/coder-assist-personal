@@ -35,6 +35,9 @@ class ClaudePricing(BaseModel):
 
     input_usd_per_mtok: float = 3.00
     output_usd_per_mtok: float = 15.00
+    # Overhead do próprio Claude Code: ~23k tokens de sistema em toda chamada,
+    # gravados em cache (1h) a 2x o preço de input na primeira chamada.
+    overhead_tokens: int = 23_000
 
 
 class ClaudeSettings(BaseModel):

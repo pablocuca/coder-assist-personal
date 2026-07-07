@@ -145,10 +145,12 @@ class Router:
         """Estimativa GROSSEIRA pré-escalada (tabela de preços da config).
 
         O teto rígido é o --max-budget-usd; o custo real vem do total_cost_usd.
-        Assume ~4 chars/token na entrada e ~1500 tokens de saída.
+        Assume ~4 chars/token na entrada, ~1500 tokens de saída e o overhead
+        de sistema do Claude Code precificado como escrita de cache (2x o
+        input) — pior caso, a primeira chamada; com cache quente sai menos.
         """
         pricing = self.settings.providers.claude.pricing
-        input_tokens = prompt_chars / 4
+        input_tokens = prompt_chars / 4 + 2 * pricing.overhead_tokens
         output_tokens = 1500
         return (
             input_tokens / 1_000_000 * pricing.input_usd_per_mtok

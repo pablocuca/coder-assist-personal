@@ -130,6 +130,12 @@ def test_estimate_claude_cost_uses_pricing_table(store):
     router = make_router(store, FakeProvider())
     pricing = router.settings.providers.claude.pricing
     estimate = router.estimate_claude_cost(400_000)  # ~100k tokens de entrada
-    expected = 100_000 / 1e6 * pricing.input_usd_per_mtok + 1500 / 1e6 * pricing.output_usd_per_mtok
+    expected = (
+        (100_000 + 2 * pricing.overhead_tokens) / 1e6 * pricing.input_usd_per_mtok
+        + 1500 / 1e6 * pricing.output_usd_per_mtok
+    )
     assert estimate == pytest.approx(expected)
     assert router.estimate_claude_cost(4_000) < estimate
+    # overhead do Claude Code: nem um prompt vazio custa perto de zero
+    floor = 2 * pricing.overhead_tokens / 1e6 * pricing.input_usd_per_mtok
+    assert router.estimate_claude_cost(0) >= floor
