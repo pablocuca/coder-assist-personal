@@ -7,7 +7,7 @@ traceback cru para o usuário (princípio 5: falhar com segurança).
 
 
 class CoderAssistError(Exception):
-    """Erro base do Coder Assist Pessoal."""
+    """Erro base do Coder Assist Personal."""
 
 
 class ConfigError(CoderAssistError):

@@ -28,7 +28,7 @@ from providers.claude_cli_provider import ClaudeCliProvider
 from providers.ollama_provider import OllamaProvider
 
 app = typer.Typer(
-    help="Coder Assist Pessoal — edição de código assistida por IA, local-first e auditável.",
+    help="Coder Assist Personal — edição de código assistida por IA, local-first e auditável.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -299,7 +299,7 @@ def config(
         None, "--set", help="Definir override local, ex.: providers.ollama.model=llama3"
     ),
 ):
-    """Exibe a configuração efetiva ou grava um override local (~/.coder-assist-pessoal)."""
+    """Exibe a configuração efetiva ou grava um override local (~/.coder-assist-personal)."""
     ctx = _ctx()
     if set_value:
         if "=" not in set_value:

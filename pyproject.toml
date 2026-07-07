@@ -1,5 +1,5 @@
 [project]
-name = "coder-assist-pessoal"
+name = "coder-assist-personal"
 version = "0.1.0"
 description = "CLI de edição de código assistida por IA — local-first, com aprovação obrigatória e auditoria completa"
 requires-python = ">=3.12"

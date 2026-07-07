@@ -1,4 +1,4 @@
-"""Ponto de entrada do Coder Assist Pessoal.
+"""Ponto de entrada do Coder Assist Personal.
 
 `[project.scripts] coder-dev = "main:app"` registra o comando `coder-dev`
 apontando para o objeto Typer abaixo.

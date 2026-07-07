@@ -1,4 +1,6 @@
-# Coder Assist Pessoal
+# Coder Assist Personal
+
+🇧🇷 Português | 🇺🇸 [English](README.en.md)
 
 CLI de edição de código assistida por IA — local-first, com aprovação obrigatória
 antes de qualquer gravação e trilha de auditoria completa em SQLite.
@@ -29,7 +31,7 @@ Pré-requisitos:
   complexas — a ferramenta nunca manipula API keys
 
 ```bash
-cd ~/dev/coder-assist-pessoal   # ou onde estiver o repo
+cd ~/dev/coder-assist-personal  # ou onde estiver o repo
 pipx install --editable .       # recomendado (isola dependências)
 # alternativa: python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 ```
@@ -50,7 +52,7 @@ coder-dev --help
 
 ### Onde ficam os dados
 
-O estado em runtime fica em **`~/.coder-assist-pessoal/`**, separado do
+O estado em runtime fica em **`~/.coder-assist-personal/`**, separado do
 código-fonte e compartilhado entre todos os projetos:
 
 | Pasta                | Conteúdo                                                        |
@@ -213,7 +215,7 @@ coder-dev commit    # sugere a mensagem, você edita e confirma
 ### `coder-dev config` — ver e ajustar a configuração
 
 Exibe a configuração efetiva (defaults do repo + seus overrides) ou grava um
-override local em `~/.coder-assist-pessoal/config/settings.yaml`.
+override local em `~/.coder-assist-personal/config/settings.yaml`.
 
 ```bash
 coder-dev config --show
@@ -239,13 +241,13 @@ manipula API keys.
 ## Backup e migração para outra máquina
 
 Todo o estado (histórico, decisões, memória vetorial, backups de undo e
-configuração) vive em um único diretório: `~/.coder-assist-pessoal/`. Para
+configuração) vive em um único diretório: `~/.coder-assist-personal/`. Para
 levar tudo para outra máquina:
 
 **Na máquina de origem:**
 
 ```bash
-tar czf coder-assist-backup.tar.gz -C ~ .coder-assist-pessoal
+tar czf coder-assist-backup.tar.gz -C ~ .coder-assist-personal
 # copie o arquivo por scp, pendrive, nuvem…
 ```
 
@@ -276,21 +278,21 @@ A remoção tem duas partes independentes — o programa e os dados:
 **1. Remover o programa:**
 
 ```bash
-pipx uninstall coder-assist-pessoal
-# ou, se instalou com pip: pip uninstall coder-assist-pessoal
+pipx uninstall coder-assist-personal
+# ou, se instalou com pip: pip uninstall coder-assist-personal
 ```
 
 **2. Remover os dados (opcional e irreversível):**
 
 ```bash
-rm -rf ~/.coder-assist-pessoal
+rm -rf ~/.coder-assist-personal
 ```
 
 > **Atenção:** isso apaga o histórico de interações, as decisões registradas,
 > a memória vetorial e os backups do `undo` de **todos os projetos**. Se
 > houver qualquer chance de querer os dados depois, faça o `tar` da seção de
 > backup antes. Seus projetos e repositórios **não são tocados** — a
-> ferramenta nunca grava fora de `~/.coder-assist-pessoal/` e da raiz do
+> ferramenta nunca grava fora de `~/.coder-assist-personal/` e da raiz do
 > projeto durante edições aprovadas.
 
 Desinstalar só o programa (passo 1) e manter os dados é seguro: ao
