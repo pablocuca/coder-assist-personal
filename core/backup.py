@@ -1,6 +1,6 @@
 """Backups e pilha de undo (seção 16).
 
-Backups vivem no diretório de estado (~/.personal-aider/backups/<projeto>/),
+Backups vivem no diretório de estado (~/.coder-assist-pessoal/backups/<projeto>/),
 nunca dentro do repositório do usuário. Retenção configurável por arquivo.
 """
 

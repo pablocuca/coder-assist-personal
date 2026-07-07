@@ -1,7 +1,7 @@
 """Carregamento e validação da configuração (seção 6 + seção 23).
 
 Defaults do projeto: config/settings.yaml (versionado no repo).
-Overrides locais:   ~/.personal-aider/config/settings.yaml (não versionado).
+Overrides locais:   ~/.coder-assist-pessoal/config/settings.yaml (não versionado).
 Validação por pydantic na inicialização — erro claro se inválido.
 """
 
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from core.errors import ConfigError
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STATE_DIR = Path.home() / ".personal-aider"
+DEFAULT_STATE_DIR = Path.home() / ".coder-assist-pessoal"
 PROMPTS_DIR = PACKAGE_ROOT / "prompts"
 
 

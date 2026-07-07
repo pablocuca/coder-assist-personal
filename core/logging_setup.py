@@ -34,7 +34,7 @@ class JsonFormatter(logging.Formatter):
 def setup_logging(log_dir: Path, cfg: LoggingSettings) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(
-        log_dir / "aider.log",
+        log_dir / "coder-assist.log",
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",

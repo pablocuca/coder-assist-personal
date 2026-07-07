@@ -15,7 +15,7 @@ import yaml
 
 from cli.ui import UI
 from core.agent import Agent
-from core.errors import AiderError, ProviderError, VectorStoreError
+from core.errors import CoderAssistError, ProviderError, VectorStoreError
 from core.logging_setup import setup_logging
 from core.router import Router
 from core.settings import load_prompt, load_settings, user_config_path
@@ -28,7 +28,7 @@ from providers.claude_cli_provider import ClaudeCliProvider
 from providers.ollama_provider import OllamaProvider
 
 app = typer.Typer(
-    help="Aider Pessoal — edição de código assistida por IA, local-first e auditável.",
+    help="Coder Assist Pessoal — edição de código assistida por IA, local-first e auditável.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -76,7 +76,7 @@ class AppContext:
 def _ctx() -> AppContext:
     try:
         return AppContext()
-    except AiderError as e:
+    except CoderAssistError as e:
         ui.error(str(e))
         raise typer.Exit(1)
 
@@ -84,7 +84,7 @@ def _ctx() -> AppContext:
 def _guarded(fn) -> None:
     try:
         fn()
-    except AiderError as e:
+    except CoderAssistError as e:
         ui.error(str(e))
         raise typer.Exit(1)
     except KeyboardInterrupt:
@@ -299,7 +299,7 @@ def config(
         None, "--set", help="Definir override local, ex.: providers.ollama.model=llama3"
     ),
 ):
-    """Exibe a configuração efetiva ou grava um override local (~/.personal-aider)."""
+    """Exibe a configuração efetiva ou grava um override local (~/.coder-assist-pessoal)."""
     ctx = _ctx()
     if set_value:
         if "=" not in set_value:

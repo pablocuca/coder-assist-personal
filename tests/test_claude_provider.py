@@ -81,7 +81,7 @@ def test_success_parses_result_and_real_cost(tmp_path):
     assert "--max-budget-usd" in argv
     # cwd neutro: nunca o diretório do projeto/teste
     assert invocation["cwd"] != os.getcwd()
-    assert "aider-claude-neutral-" in invocation["cwd"]
+    assert "coder-assist-claude-neutral-" in invocation["cwd"]
 
 
 def test_missing_binary_clear_error(tmp_path):

@@ -90,7 +90,7 @@ class ClaudeCliProvider(BaseProvider):
         ]
 
         # cwd neutro: impede o agente de ler/editar o projeto por conta própria
-        neutral_dir = tempfile.mkdtemp(prefix="aider-claude-neutral-")
+        neutral_dir = tempfile.mkdtemp(prefix="coder-assist-claude-neutral-")
         try:
             result = subprocess.run(
                 command,

@@ -6,7 +6,7 @@ __pycache__/
 dist/
 build/
 
-# Estado em runtime — nunca versionado (vive em ~/.personal-aider por padrão,
+# Estado em runtime — nunca versionado (vive em ~/.coder-assist-pessoal por padrão,
 # mas ignorado aqui também por segurança caso alguém aponte o state_dir para o repo)
 db/
 logs/
