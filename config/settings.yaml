@@ -1,3 +1,12 @@
+# Modo de operação:
+#   offline   — só Ollama; o provider Claude nem é registrado (nenhuma chamada
+#               externa possível). Para implantação corporativa sem aprovação
+#               de tráfego externo.
+#   provider  — Ollama + Claude via Claude Code CLI pessoal (`claude login`).
+#   corporate — Ollama + Claude via endpoint sancionado pela organização
+#               (configure providers.claude.corporate abaixo).
+mode: provider
+
 providers:
   default: ollama
   ollama:
@@ -18,6 +27,18 @@ providers:
       input_usd_per_mtok: 3.00     # o custo real vem do total_cost_usd do output JSON
       output_usd_per_mtok: 15.00
       overhead_tokens: 23000       # sistema do Claude Code, presente em toda chamada
+    corporate:                     # usado apenas com mode: corporate
+      model: ""                    # id do modelo no endpoint (ex.: us.anthropic.claude-sonnet-4-6-v1:0)
+      env: {}                      # vars injetadas na chamada do binário, ex.:
+      # env:                       #   AWS Bedrock:
+      #   CLAUDE_CODE_USE_BEDROCK: "1"
+      #   AWS_REGION: us-east-1
+      # env:                       #   Google Vertex:
+      #   CLAUDE_CODE_USE_VERTEX: "1"
+      #   CLOUD_ML_REGION: us-east5
+      #   ANTHROPIC_VERTEX_PROJECT_ID: meu-projeto-gcp
+      # env:                       #   Gateway interno (ex.: LiteLLM):
+      #   ANTHROPIC_BASE_URL: https://llm-gateway.empresa.com
 
 router:
   confidence_threshold: 0.60

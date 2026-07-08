@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -71,10 +72,19 @@ _NO_TOOLS_NOTE = (
 class ClaudeCliProvider(BaseProvider):
     name = "claude"
 
-    def __init__(self, cfg: ClaudeSettings):
+    def __init__(self, cfg: ClaudeSettings, extra_env: dict[str, str] | None = None):
         self.cfg = cfg
         self.model = cfg.model
         self._flags_validated = False
+        # Modo corporate: env vars que apontam o binário para o endpoint
+        # sancionado (Bedrock/Vertex/gateway). Vazio nos demais modos.
+        self.extra_env = extra_env or {}
+
+    def _env(self) -> dict[str, str] | None:
+        """Ambiente do subprocess; None = herda o ambiente atual sem cópia."""
+        if not self.extra_env:
+            return None
+        return {**os.environ, **self.extra_env}
 
     # --- pré-condições ----------------------------------------------------------
 
@@ -95,6 +105,7 @@ class ClaudeCliProvider(BaseProvider):
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=self._env(),
             )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise ProviderError(f"Não foi possível executar `{self.cfg.binary} --help`: {e}") from e
@@ -126,6 +137,7 @@ class ClaudeCliProvider(BaseProvider):
                 text=True,
                 timeout=30,
                 stdin=subprocess.DEVNULL,
+                env=self._env(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return False
@@ -163,6 +175,7 @@ class ClaudeCliProvider(BaseProvider):
                 capture_output=True,
                 timeout=self.cfg.timeout_seconds,
                 cwd=neutral_dir,
+                env=self._env(),
             )
         except subprocess.TimeoutExpired as e:
             raise ProviderError(

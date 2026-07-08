@@ -8,6 +8,7 @@ Validação por pydantic na inicialização — erro claro se inválido.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -40,6 +41,15 @@ class ClaudePricing(BaseModel):
     overhead_tokens: int = 23_000
 
 
+class ClaudeCorporateSettings(BaseModel):
+    """Modo corporate: o binário `claude` aponta para o endpoint sancionado
+    pela organização (AWS Bedrock, Google Vertex ou gateway interno), via
+    variáveis de ambiente injetadas na chamada. Exemplos em settings.yaml."""
+
+    env: dict[str, str] = Field(default_factory=dict)
+    model: str = ""  # id do modelo no endpoint corporativo; vazio = usa claude.model
+
+
 class ClaudeSettings(BaseModel):
     binary: str = "claude"
     model: str = "claude-sonnet-4-6"
@@ -47,6 +57,7 @@ class ClaudeSettings(BaseModel):
     max_turns: int = 1
     max_budget_usd: float = 0.50
     pricing: ClaudePricing = Field(default_factory=ClaudePricing)
+    corporate: ClaudeCorporateSettings = Field(default_factory=ClaudeCorporateSettings)
 
 
 class ProvidersSettings(BaseModel):
@@ -107,6 +118,12 @@ class GitSettings(BaseModel):
 
 
 class Settings(BaseModel):
+    # offline: só Ollama — nenhuma chamada externa possível (implantação corporativa
+    #          sem aprovação de tráfego externo)
+    # provider: Ollama + Claude via Claude Code CLI autenticado (`claude login`)
+    # corporate: Ollama + Claude via endpoint sancionado pela organização
+    #            (providers.claude.corporate — Bedrock/Vertex/gateway)
+    mode: Literal["offline", "provider", "corporate"] = "provider"
     providers: ProvidersSettings = Field(default_factory=ProvidersSettings)
     router: RouterSettings = Field(default_factory=RouterSettings)
     embeddings: EmbeddingsSettings = Field(default_factory=EmbeddingsSettings)

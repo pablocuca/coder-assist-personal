@@ -229,11 +229,53 @@ interpretado como YAML (números, booleanos e strings funcionam naturalmente).
 A configuração é revalidada na hora — um valor inválido é rejeitado com erro
 claro.
 
+## Modos de operação
+
+A ferramenta opera em um de três modos, controlado por `mode` na configuração
+(`coder-dev config --set mode=<modo>`):
+
+| Modo | O que habilita | Para quem |
+| --- | --- | --- |
+| `offline` | **Só Ollama.** O provider Claude nem é registrado — nenhuma chamada externa é possível, nem por engano. | Implantação corporativa sem aprovação de tráfego externo; ambientes com DLP/política restritiva. |
+| `provider` (padrão) | Ollama + Claude via **Claude Code CLI pessoal** (`claude login`). | Uso pessoal, projetos próprios. |
+| `corporate` | Ollama + Claude via **endpoint sancionado pela organização** (AWS Bedrock, Google Vertex ou gateway interno). | Empresas que aprovaram um canal oficial de acesso ao Claude. |
+
+```bash
+coder-dev config --set mode=offline     # trava a ferramenta em 100% local
+coder-dev config --set mode=provider    # volta ao padrão (Claude pessoal)
+coder-dev config --set mode=corporate   # usa o endpoint da organização
+```
+
+No modo `offline`, `--provider claude` e as ofertas de escalada são
+desabilitados com mensagem clara — o comportamento local (edit, ask, index,
+recall, memória, undo) segue completo.
+
+No modo `corporate`, configure o endpoint em
+`providers.claude.corporate` (via `settings.yaml` ou `config --set`):
+
+```yaml
+providers:
+  claude:
+    corporate:
+      model: us.anthropic.claude-sonnet-4-6-v1:0   # id do modelo no endpoint
+      env:                                          # exemplo AWS Bedrock:
+        CLAUDE_CODE_USE_BEDROCK: "1"
+        AWS_REGION: us-east-1
+      # Google Vertex: CLAUDE_CODE_USE_VERTEX=1, CLOUD_ML_REGION,
+      #                ANTHROPIC_VERTEX_PROJECT_ID
+      # Gateway interno (LiteLLM etc.): ANTHROPIC_BASE_URL
+```
+
+As variáveis são injetadas apenas na chamada do binário `claude` — as
+credenciais do endpoint (AWS/GCP) seguem o mecanismo padrão da sua
+organização, e a ferramenta continua sem armazenar chave nenhuma.
+
 ## Usando o Claude
 
 Por padrão tudo roda no **Ollama** (local e gratuito). O Claude é o provider
 "de reforço" para tarefas que o modelo local não dá conta — e seu uso é
-sempre **pago, explícito e confirmado**.
+sempre **pago, explícito e confirmado**. (Disponível nos modos `provider` e
+`corporate` — veja [Modos de operação](#modos-de-operação).)
 
 ### Configuração inicial (uma vez)
 

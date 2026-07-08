@@ -187,7 +187,7 @@ class Agent:
         reasons = self.router.escalation_reasons(
             confidence=proposal.confidence, task_type="edit"
         )
-        if provider != "claude" and reasons:
+        if provider != "claude" and reasons and self._claude_available():
             if self.settings.router.auto_escalate:
                 self.ui.warn("Escalada automática: " + "; ".join(reasons))
                 self.store.update_interaction(interaction_id, status="rejected")
@@ -241,6 +241,17 @@ class Agent:
 
     # --- helpers do fluxo de edição ------------------------------------------------
 
+    def _claude_available(self) -> bool:
+        """False no modo offline: o provider Claude nem é registrado."""
+        return "claude" in self.router.providers
+
+    def _reject_claude_offline(self) -> None:
+        self.ui.error(
+            "O provider Claude está desabilitado (mode=offline). "
+            "Habilite com `coder-dev config --set mode=provider` "
+            "(pessoal) ou `mode=corporate` (endpoint da organização)."
+        )
+
     def _resolve_initial_provider(
         self, provider: str | None, prompt_chars: int
     ) -> tuple[bool, str | None]:
@@ -249,9 +260,12 @@ class Agent:
         Retorna (prosseguir?, provider) — provider None significa usar o padrão.
         """
         if provider == "claude":
+            if not self._claude_available():
+                self._reject_claude_offline()
+                return False, None
             return (True, "claude") if self._confirm_claude_cost(prompt_chars) else (False, None)
         reasons = self.router.escalation_reasons(prompt_chars=prompt_chars)
-        if reasons and provider is None:
+        if reasons and provider is None and self._claude_available():
             self.ui.warn("; ".join(reasons))
             if self.settings.router.auto_escalate or self.ui.confirm("Escalar para Claude?"):
                 if self._confirm_claude_cost(prompt_chars):
@@ -278,12 +292,13 @@ class Agent:
 
     def _approve(self, changed: list[str], provider: str | None) -> list[str] | str:
         """Retorna a lista de arquivos aprovados, [] para rejeição, ou 'escalate'."""
+        allow_escalate = provider != "claude" and self._claude_available()
         if len(changed) == 1:
-            choice = self.ui.ask_approval(allow_escalate=provider != "claude")
+            choice = self.ui.ask_approval(allow_escalate=allow_escalate)
             if choice == "e":
                 return "escalate"
             return changed if choice == "a" else []
-        choice = self.ui.ask_batch_approval(allow_escalate=provider != "claude")
+        choice = self.ui.ask_batch_approval(allow_escalate=allow_escalate)
         if choice == "e":
             return "escalate"
         if choice == "r":
@@ -346,7 +361,7 @@ class Agent:
 
         # Política V2: duas falhas consecutivas de parse → oferecer escalada
         reasons = self.router.escalation_reasons(parse_failures=2)
-        if provider != "claude" and reasons:
+        if provider != "claude" and reasons and self._claude_available():
             self.ui.warn("; ".join(reasons))
             if self.ui.confirm("Escalar esta tarefa para Claude?"):
                 if not self._confirm_claude_cost(len(user_prompt)):
@@ -380,8 +395,12 @@ class Agent:
     def ask(self, question: str, provider: str | None = None) -> None:
         system = load_prompt("ask.md")
         prompt = build_ask_prompt(question, self.root.name)
-        if provider == "claude" and not self._confirm_claude_cost(len(prompt)):
-            return
+        if provider == "claude":
+            if not self._claude_available():
+                self._reject_claude_offline()
+                return
+            if not self._confirm_claude_cost(len(prompt)):
+                return
         interaction_id, response = self.router.ask(
             "ask", prompt, system=system, provider=provider
         )

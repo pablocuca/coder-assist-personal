@@ -24,8 +24,7 @@ from git_tools.git_manager import current_branch, find_project_root
 from memory.memory_manager import MemoryManager
 from memory.retriever import Retriever
 from memory.sqlite_store import SQLiteStore
-from providers.claude_cli_provider import ClaudeCliProvider
-from providers.ollama_provider import OllamaProvider
+from providers.factory import build_providers
 
 app = typer.Typer(
     help="Coder Assist Personal — edição de código assistida por IA, local-first e auditável.",
@@ -52,10 +51,7 @@ class AppContext:
         if self.branch is None:
             ui.warn("Projeto sem Git — recursos Git desabilitados (histórico continua normal).")
 
-        providers = {
-            "ollama": OllamaProvider(self.settings.providers.ollama),
-            "claude": ClaudeCliProvider(self.settings.providers.claude),
-        }
+        providers = build_providers(self.settings)  # respeita settings.mode
         self.router = Router(
             self.settings,
             self.store,

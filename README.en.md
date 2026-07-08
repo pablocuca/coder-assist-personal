@@ -228,11 +228,53 @@ parsed as YAML (numbers, booleans, and strings work naturally). The
 configuration is revalidated on the spot — an invalid value is rejected with
 a clear error.
 
+## Operating modes
+
+The tool operates in one of three modes, controlled by `mode` in the
+configuration (`coder-dev config --set mode=<mode>`):
+
+| Mode | What it enables | Who it's for |
+| --- | --- | --- |
+| `offline` | **Ollama only.** The Claude provider is not even registered — no external call is possible, not even by accident. | Corporate deployment without external-traffic approval; environments with DLP/restrictive policies. |
+| `provider` (default) | Ollama + Claude via the **personal Claude Code CLI** (`claude login`). | Personal use, your own projects. |
+| `corporate` | Ollama + Claude via the **organization-sanctioned endpoint** (AWS Bedrock, Google Vertex, or an internal gateway). | Companies that approved an official Claude access channel. |
+
+```bash
+coder-dev config --set mode=offline     # locks the tool to 100% local
+coder-dev config --set mode=provider    # back to default (personal Claude)
+coder-dev config --set mode=corporate   # uses the organization's endpoint
+```
+
+In `offline` mode, `--provider claude` and escalation offers are disabled
+with a clear message — local behavior (edit, ask, index, recall, memory,
+undo) remains complete.
+
+In `corporate` mode, configure the endpoint under
+`providers.claude.corporate` (via `settings.yaml` or `config --set`):
+
+```yaml
+providers:
+  claude:
+    corporate:
+      model: us.anthropic.claude-sonnet-4-6-v1:0   # model id on the endpoint
+      env:                                          # AWS Bedrock example:
+        CLAUDE_CODE_USE_BEDROCK: "1"
+        AWS_REGION: us-east-1
+      # Google Vertex: CLAUDE_CODE_USE_VERTEX=1, CLOUD_ML_REGION,
+      #                ANTHROPIC_VERTEX_PROJECT_ID
+      # Internal gateway (LiteLLM etc.): ANTHROPIC_BASE_URL
+```
+
+The variables are injected only into the `claude` binary invocation — the
+endpoint credentials (AWS/GCP) follow your organization's standard mechanism,
+and the tool still stores no keys whatsoever.
+
 ## Using Claude
 
 By default everything runs on **Ollama** (local and free). Claude is the
 "reinforcement" provider for tasks the local model can't handle — and its
-use is always **paid, explicit, and confirmed**.
+use is always **paid, explicit, and confirmed**. (Available in the `provider`
+and `corporate` modes — see [Operating modes](#operating-modes).)
 
 ### Initial setup (once)
 
