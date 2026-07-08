@@ -8,16 +8,14 @@
 
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
 
-import pathspec
-
 from core.errors import ProviderError, VectorStoreError
+from core.fs_scan import is_binary, iter_project_files
 from core.settings import Settings
 from memory.chunker import chunk_code, chunk_conversation
 from memory.embeddings import Embedder
@@ -25,8 +23,6 @@ from memory.sqlite_store import SQLiteStore
 from memory.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
-
-_BINARY_SNIFF_BYTES = 8192
 
 
 @dataclass
@@ -40,25 +36,6 @@ class IndexReport:
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _is_binary(path: Path) -> bool:
-    try:
-        with open(path, "rb") as f:
-            return b"\x00" in f.read(_BINARY_SNIFF_BYTES)
-    except OSError:
-        return True
-
-
-def _load_gitignore(root: Path) -> pathspec.PathSpec | None:
-    gitignore = root / ".gitignore"
-    if not gitignore.exists():
-        return None
-    lines = gitignore.read_text(encoding="utf-8", errors="ignore").splitlines()
-    try:
-        return pathspec.PathSpec.from_lines("gitignore", lines)
-    except KeyError:  # pathspec antigo, sem a factory 'gitignore'
-        return pathspec.PathSpec.from_lines("gitwildmatch", lines)
 
 
 class MemoryManager:
@@ -91,30 +68,7 @@ class MemoryManager:
     # --- varredura de arquivos (seção 13) --------------------------------------
 
     def _iter_candidate_files(self) -> Iterator[Path]:
-        cfg = self.settings.indexing
-        gitignore = _load_gitignore(self.root) if cfg.respect_gitignore else None
-        extra_dirs = {i.rstrip("/") for i in cfg.extra_ignores if i.endswith("/")}
-        extra_files = [i for i in cfg.extra_ignores if not i.endswith("/")]
-
-        def walk(directory: Path) -> Iterator[Path]:
-            for entry in sorted(directory.iterdir()):
-                rel = entry.relative_to(self.root).as_posix()
-                if entry.is_dir():
-                    if entry.name in extra_dirs or entry.is_symlink():
-                        continue
-                    if gitignore and gitignore.match_file(rel + "/"):
-                        continue
-                    yield from walk(entry)
-                    continue
-                if gitignore and gitignore.match_file(rel):
-                    continue
-                if any(fnmatch.fnmatch(rel, pat) for pat in extra_files):
-                    continue
-                if not any(fnmatch.fnmatch(entry.name, pat) for pat in cfg.include):
-                    continue
-                yield entry
-
-        yield from walk(self.root)
+        return iter_project_files(self.root, self.settings.indexing)
 
     # --- indexação --------------------------------------------------------------
 
@@ -138,7 +92,7 @@ class MemoryManager:
                 if path.stat().st_size > max_bytes:
                     report.skipped += 1
                     continue
-                if _is_binary(path):
+                if is_binary(path):
                     report.skipped += 1
                     continue
                 raw = path.read_bytes()

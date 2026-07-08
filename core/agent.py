@@ -15,8 +15,9 @@ from pathlib import Path
 from cli.ui import UI
 from core.backup import BackupManager
 from core.context_builder import build_ask_prompt, build_edit_prompt
+from core.context_explorer import ContextExplorer
 from core.diff_engine import unified_diff
-from core.errors import ParseError, PatchError, PathGuardError
+from core.errors import ParseError, PatchError, PathGuardError, ProviderError
 from core.patch_engine import apply_search_replace, atomic_write, check_replace_file_allowed
 from core.router import Router
 from core.settings import Settings, load_prompt
@@ -24,6 +25,7 @@ from git_tools.git_manager import is_file_dirty
 from memory.memory_manager import MemoryManager
 from memory.sqlite_store import SQLiteStore
 from models.schemas import EditProposal, parse_edit_proposal
+from providers.ollama_provider import OllamaProvider
 from security.path_guard import validate_path
 
 logger = logging.getLogger(__name__)
@@ -111,6 +113,7 @@ class Agent:
         instruction: str,
         provider: str | None = None,
         plan: bool = False,
+        explore: bool = False,
     ) -> None:
         # 1. Validar path e ler o arquivo principal
         path = validate_path(self.root, file_arg)
@@ -133,8 +136,12 @@ class Agent:
                     "rollback, mas considere commitar antes."
                 )
 
+        related: dict[str, str] = {}
+        if explore and not is_new:
+            related = self._explore_context(rel, original, instruction, provider)
+
         system = load_prompt("edit.md")
-        user_prompt = build_edit_prompt(rel, original, instruction, is_new)
+        user_prompt = build_edit_prompt(rel, original, instruction, is_new, related=related or None)
 
         # (V2) Planejamento: plano em passos exibido antes de editar
         if plan and not self._show_plan(rel, original, instruction, provider):
@@ -240,6 +247,44 @@ class Agent:
             self.ui.info(f"Interação #{interaction_id}: {len(written)} arquivo(s) gravado(s).")
 
     # --- helpers do fluxo de edição ------------------------------------------------
+
+    def _explore_context(
+        self, rel: str, content: str, instruction: str, provider: str | None
+    ) -> dict[str, str]:
+        """`edit --explore`: o Ollama local decide, via tool calling, quais
+        arquivos relacionados (imports, tipos citados) ler antes de editar.
+        Nunca ativa com Claude — a neutralização de ferramentas do provider
+        Claude é intencional (ver providers/claude_cli_provider.py)."""
+        if provider == "claude":
+            self.ui.warn("--explore ignorado: só funciona com o provider Ollama.")
+            return {}
+        ollama = self.router.providers.get("ollama")
+        if not isinstance(ollama, OllamaProvider):
+            self.ui.warn("--explore ignorado: provider Ollama indisponível.")
+            return {}
+
+        explorer = ContextExplorer(
+            ollama, self.root, self.settings.indexing, self.settings.context_discovery,
+            system_prompt=load_prompt("explore.md"),
+        )
+        with self.ui.console.status("explorando arquivos relacionados…"):
+            try:
+                result = explorer.explore(rel, content, instruction)
+            except ProviderError as e:
+                self.ui.warn(f"Exploração de contexto falhou, seguindo sem contexto extra: {e}")
+                return {}
+
+        if result.files:
+            self.ui.info(
+                f"Exploração encontrou {len(result.files)} arquivo(s) relacionado(s): "
+                + ", ".join(sorted(result.files))
+            )
+        if result.truncated_budget:
+            self.ui.warn(
+                "Orçamento de exploração esgotado (chamadas/caracteres) — "
+                "contexto pode estar incompleto."
+            )
+        return result.files
 
     def _claude_available(self) -> bool:
         """False no modo offline: o provider Claude nem é registrado."""

@@ -92,6 +92,7 @@ backup automático antes de gravar (escrita atômica).
 coder-dev edit lib/home_page.dart -m "converte para ConsumerWidget"
 coder-dev edit lib/service.dart -m "refatora" --plan        # mostra plano em passos antes de editar
 coder-dev edit lib/complexo.dart -m "..." --provider claude # escala direto para o Claude (confirma custo)
+coder-dev edit controller.py -m "adiciona endpoint" --explore  # Ollama explora arquivos relacionados antes
 ```
 
 | Opção            | Efeito                                                          |
@@ -99,9 +100,38 @@ coder-dev edit lib/complexo.dart -m "..." --provider claude # escala direto para
 | `-m, --message`  | Instrução de edição (sem ela, a CLI pergunta interativamente)   |
 | `--plan`         | A IA apresenta um plano em passos para aprovação antes de propor o diff |
 | `--provider`     | Força `ollama` (local, padrão) ou `claude` (pago, pede confirmação de custo) |
+| `--explore`      | Ollama explora arquivos relacionados ao alvo antes de editar (ver abaixo) |
 
 **Quando usar:** qualquer mudança de código. Edições que tocam múltiplos
 arquivos mostram um diff por arquivo, com aprovação individual ou em lote.
+
+#### `--explore`: seguindo referências entre arquivos
+
+Por padrão, o `edit` só enxerga o arquivo que você apontou — se a tarefa
+envolve uma Controller que depende de uma Service, um Model, um Repository
+etc., o modelo não sabe nada sobre esses outros arquivos. `--explore` resolve
+isso, mas **só funciona com o provider Ollama** (nunca com Claude — a
+neutralização de ferramentas do provider Claude é intencional, ver seção
+[Usando o Claude](#usando-o-claude)):
+
+```bash
+coder-dev edit controllers/payment_controller.py \
+  -m "adiciona validação de valor mínimo no endpoint de cobrança" \
+  --explore
+```
+
+Antes de montar a proposta de edição, o Ollama local ganha três ferramentas
+de leitura — `list_files`, `grep` e `read_file` — para decidir sozinho quais
+arquivos relacionados ao alvo (imports, tipos citados, classes/métodos
+chamados) valem a pena ler. Tudo confinado à raiz do projeto pelo mesmo path
+guard que protege as gravações, e com orçamento rígido (chamadas de
+ferramenta e caracteres lidos, configurável em `context_discovery` no
+`settings.yaml`) para não explorar o projeto inteiro nem entrar em loop.
+
+Os arquivos descobertos entram no prompt como **contexto de referência**,
+separados do arquivo alvo — o modelo só propõe editá-los se a tarefa
+realmente exigir, e qualquer edição neles ainda passa pelo mesmo fluxo de
+diff, aprovação e backup de sempre.
 
 ### `coder-dev ask` — perguntar sem editar nada
 

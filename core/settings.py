@@ -107,6 +107,18 @@ class IndexingSettings(BaseModel):
     max_indexed_file_kb: int = 256
 
 
+class ContextDiscoverySettings(BaseModel):
+    """`edit --explore`: o Ollama local decide, via tool calling, quais
+    arquivos relacionados (imports, tipos citados) ler antes de editar.
+    Nunca ativa com Claude — ver core/context_explorer.py."""
+
+    max_tool_calls: int = 8       # teto de chamadas de ferramenta por exploração
+    max_total_chars: int = 40_000  # orçamento de conteúdo lido, somado
+    max_files: int = 6            # arquivos de referência incluídos no prompt final
+    max_list_results: int = 50    # resultados por chamada de list_files
+    max_grep_results: int = 30    # ocorrências por chamada de grep
+
+
 class LoggingSettings(BaseModel):
     level: str = "INFO"
     format: str = "json"
@@ -129,6 +141,7 @@ class Settings(BaseModel):
     embeddings: EmbeddingsSettings = Field(default_factory=EmbeddingsSettings)
     editing: EditingSettings = Field(default_factory=EditingSettings)
     indexing: IndexingSettings = Field(default_factory=IndexingSettings)
+    context_discovery: ContextDiscoverySettings = Field(default_factory=ContextDiscoverySettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     git: GitSettings = Field(default_factory=GitSettings)
     state_dir: Path = DEFAULT_STATE_DIR

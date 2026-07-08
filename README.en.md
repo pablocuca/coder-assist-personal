@@ -92,6 +92,7 @@ creates an automatic backup before writing (atomic write).
 coder-dev edit lib/home_page.dart -m "convert to ConsumerWidget"
 coder-dev edit lib/service.dart -m "refactor" --plan        # shows a step-by-step plan before editing
 coder-dev edit lib/complex.dart -m "..." --provider claude  # escalates straight to Claude (confirms cost)
+coder-dev edit controller.py -m "add endpoint" --explore    # Ollama explores related files first
 ```
 
 | Option           | Effect                                                          |
@@ -99,9 +100,38 @@ coder-dev edit lib/complex.dart -m "..." --provider claude  # escalates straight
 | `-m, --message`  | Edit instruction (without it, the CLI prompts interactively)    |
 | `--plan`         | The AI presents a step-by-step plan for approval before proposing the diff |
 | `--provider`     | Forces `ollama` (local, default) or `claude` (paid, asks for cost confirmation) |
+| `--explore`      | Ollama explores files related to the target before editing (see below) |
 
 **When to use:** any code change. Edits touching multiple files show one diff
 per file, with individual or batch approval.
+
+#### `--explore`: following references across files
+
+By default, `edit` only sees the file you pointed it at — if the task
+touches a Controller that depends on a Service, a Model, a Repository, and so
+on, the model knows nothing about those other files. `--explore` solves this,
+but **only works with the Ollama provider** (never with Claude — the Claude
+provider's tool neutralization is intentional, see the
+[Using Claude](#using-claude) section):
+
+```bash
+coder-dev edit controllers/payment_controller.py \
+  -m "add a minimum-amount check on the charge endpoint" \
+  --explore
+```
+
+Before assembling the edit proposal, the local Ollama model gets three
+read-only tools — `list_files`, `grep`, and `read_file` — to decide on its
+own which files related to the target (imports, referenced types,
+called classes/methods) are worth reading. Everything is confined to the
+project root by the same path guard that protects writes, with a hard budget
+(tool calls and characters read, configurable under `context_discovery` in
+`settings.yaml`) so it never explores the whole project or loops forever.
+
+Discovered files enter the prompt as **reference context**, kept separate
+from the primary target — the model only proposes editing them if the task
+actually requires it, and any edit to them still goes through the same
+diff, approval, and backup flow as always.
 
 ### `coder-dev ask` — ask without editing anything
 

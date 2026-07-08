@@ -64,3 +64,31 @@ class OllamaProvider(BaseProvider):
             f"Ollama não respondeu em {self.cfg.base_url}. Está rodando? "
             f"(`ollama serve`) — último erro: {last_error}"
         )
+
+    def chat_with_tools(self, messages: list[dict], tools: list[dict]) -> dict:
+        """Uma rodada de chat com tool calling — usada só pelo ContextExplorer
+        (edit --explore). O loop de múltiplas chamadas é responsabilidade de
+        quem chama; este método faz uma requisição e devolve a mensagem crua
+        do assistant (com 'content' e, se houver, 'tool_calls')."""
+        url = self.cfg.base_url.rstrip("/") + "/api/chat"
+        payload = {"model": self.model, "messages": messages, "tools": tools, "stream": False}
+        try:
+            response = requests.post(url, json=payload, timeout=self.cfg.timeout_seconds)
+            if response.status_code == 404:
+                raise ProviderError(
+                    f"Ollama respondeu 404 para o modelo '{self.model}'. "
+                    f"Ele está instalado? Tente: ollama pull {self.model}"
+                )
+            response.raise_for_status()
+            data = response.json()
+        except ProviderError:
+            raise
+        except requests.RequestException as e:
+            raise ProviderError(f"Ollama não respondeu em {self.cfg.base_url} (tool loop): {e}") from e
+        except ValueError as e:
+            raise ProviderError(f"Resposta inesperada do Ollama (tool loop): {e}") from e
+
+        message = data.get("message")
+        if not isinstance(message, dict):
+            raise ProviderError("Resposta do Ollama sem campo 'message' válido (tool loop).")
+        return message

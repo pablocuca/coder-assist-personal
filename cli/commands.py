@@ -94,11 +94,17 @@ def edit(
     provider: Optional[str] = typer.Option(None, "--provider", help="ollama | claude"),
     message: Optional[str] = typer.Option(None, "--message", "-m", help="Instrução de edição"),
     plan: bool = typer.Option(False, "--plan", help="Exibir plano em passos antes de editar"),
+    explore: bool = typer.Option(
+        False, "--explore",
+        help="Ollama explora arquivos relacionados (imports, tipos citados) antes de editar",
+    ),
 ):
     """Edita arquivos: proposta da IA → diff por arquivo → aprovação → backup → gravação."""
     ctx = _ctx()
     instruction = message or typer.prompt("Instrução")
-    _guarded(lambda: ctx.agent.edit(arquivo, instruction, provider=provider, plan=plan))
+    _guarded(
+        lambda: ctx.agent.edit(arquivo, instruction, provider=provider, plan=plan, explore=explore)
+    )
 
 
 @app.command()

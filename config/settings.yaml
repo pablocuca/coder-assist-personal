@@ -61,6 +61,15 @@ indexing:
   extra_ignores: [".git/", "build/", "node_modules/", ".dart_tool/", "venv/", ".venv/", "dist/", "target/", "db/", "backups/", "indexes/", "logs/"]
   max_indexed_file_kb: 256
 
+# `coder-dev edit --explore`: o Ollama local decide (tool calling) quais
+# arquivos relacionados ler antes de editar — nunca ativa com Claude.
+context_discovery:
+  max_tool_calls: 8
+  max_total_chars: 40000
+  max_files: 6
+  max_list_results: 50
+  max_grep_results: 30
+
 logging:
   level: INFO
   format: json
